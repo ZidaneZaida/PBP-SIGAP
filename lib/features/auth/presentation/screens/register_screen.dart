@@ -2,19 +2,25 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/widgets/social_icons.dart';
-import 'login_screen.dart';
 import '../../../dashboard/presentation/screens/dashboard_screen.dart';
+import 'login_screen.dart';
 
-/// Screen Registrasi SIGAP berdasarkan desain mockup resmi:
-/// "SIGAP mobile — Register — iPhone 17 Pro.svg"
-///
-/// Fitur:
-/// - Header Dark Green dengan Logo SIGAP, Headline & Deskripsi
-/// - Form Create Account (Social Buttons Google & Facebook, Divider -OR-)
-/// - Input Fullname, Email Address, dan Password dengan eye toggle
-/// - Tombol Create Account dengan loading state & validasi form
-/// - Tautan "Already have an account? Log in" menuju Login Screen
-/// - Dua Kartu Manfaat ("APA YANG AKAN KAMU DAPAT" & "LAYANAN YANG TELAH ADA")
+/// Screen Registrasi SIGAP (Siaga Bencana Kota Padang)
+/// 
+/// Gaya Visual: Clean UI, background putih/off-white lega,
+/// Dark Forest Green sebagai warna primary.
+/// 
+/// Komponen:
+/// - Header: Logo SIGAP, "Buat Akun SIGAP", dan sub-teks
+/// - Form: 
+///   a. Nama Lengkap
+///   b. Nomor HP / WhatsApp (Ditandai wajib untuk darurat)
+///   c. Email
+///   d. Kata Sandi (dengan toggle obscure)
+/// - Checkbox: Persetujuan Syarat & Kebijakan Privasi data lokasi
+/// - Tombol Aksi: Primary "BUAT AKUN", divider "atau", outline "Daftar dengan Google"
+/// - Navigasi Bawah: "Sudah punya akun? Masuk di sini" -> LoginScreen
+/// - Footer Paling Penting: "🚨 MASUK TANPA AKUN (MODE DARURAT)" -> bypass autentikasi
 class RegisterScreen extends StatefulWidget {
   const RegisterScreen({super.key});
 
@@ -25,15 +31,18 @@ class RegisterScreen extends StatefulWidget {
 class _RegisterScreenState extends State<RegisterScreen> {
   final _formKey = GlobalKey<FormState>();
   final _nameController = TextEditingController();
+  final _phoneController = TextEditingController();
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
 
   bool _isPasswordVisible = false;
+  bool _agreeToTerms = false;
   bool _isLoading = false;
 
   @override
   void dispose() {
     _nameController.dispose();
+    _phoneController.dispose();
     _emailController.dispose();
     _passwordController.dispose();
     super.dispose();
@@ -44,60 +53,101 @@ class _RegisterScreenState extends State<RegisterScreen> {
       return;
     }
 
-    setState(() {
-      _isLoading = true;
-    });
+    if (!_agreeToTerms) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Row(
+            children: [
+              const Icon(Icons.info_outline_rounded, color: Colors.white, size: 20),
+              const SizedBox(width: 10),
+              const Expanded(
+                child: Text('Harap setujui Syarat & Ketentuan dan Kebijakan Privasi.'),
+              ),
+            ],
+          ),
+          backgroundColor: AppColors.alertTerracotta,
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+        ),
+      );
+      return;
+    }
 
-    // Simulasi proses registrasi akun
-    await Future.delayed(const Duration(milliseconds: 1200));
+    setState(() => _isLoading = true);
+    await Future.delayed(const Duration(milliseconds: 1000));
 
     if (!mounted) return;
+    setState(() => _isLoading = false);
 
-    setState(() {
-      _isLoading = false;
-    });
-
-    // Notifikasi sukses
+    final name = _nameController.text.trim();
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Row(
           children: [
-            const Icon(Icons.check_circle_rounded, color: Colors.white),
-            const SizedBox(width: 12),
+            const Icon(Icons.check_circle_rounded, color: Colors.white, size: 20),
+            const SizedBox(width: 10),
             Expanded(
               child: Text(
-                'Akun SIGAP berhasil didaftarkan! Selamat datang, ${_nameController.text.trim()}.',
-                style: GoogleFonts.plusJakartaSans(fontSize: 13.5),
+                'Akun berhasil dibuat! Selamat datang, $name.',
+                style: GoogleFonts.plusJakartaSans(fontSize: 13),
               ),
             ),
           ],
         ),
-        backgroundColor: AppColors.primary,
+        backgroundColor: AppColors.primaryDark,
         behavior: SnackBarBehavior.floating,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
       ),
     );
 
-    // Navigasi ke Dashboard SIGAP
-    Navigator.of(context).pushReplacement(
+    Navigator.of(context).pushAndRemoveUntil(
       MaterialPageRoute(
-        builder: (context) => DashboardScreen(
-          userName: _nameController.text.trim().isNotEmpty
-              ? _nameController.text.trim()
-              : 'Warga Padang',
-        ),
+        builder: (context) => DashboardScreen(userName: name),
       ),
+      (route) => false,
     );
   }
 
-  void _handleSocialRegister(String provider) {
+  void _handleGoogleRegister() async {
+    setState(() => _isLoading = true);
+    await Future.delayed(const Duration(milliseconds: 700));
+
+    if (!mounted) return;
+    setState(() => _isLoading = false);
+
+    const userName = 'Ahmad Zaki';
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Text('Menghubungkan autentikasi dengan $provider...'),
-        backgroundColor: AppColors.primaryMedium,
+        content: Row(
+          children: [
+            const Icon(Icons.check_circle_rounded, color: Colors.white, size: 20),
+            const SizedBox(width: 10),
+            const Text('Akun SIGAP berhasil didaftarkan via Google!'),
+          ],
+        ),
+        backgroundColor: AppColors.primaryDark,
         behavior: SnackBarBehavior.floating,
-        duration: const Duration(seconds: 2),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
       ),
+    );
+
+    Navigator.of(context).pushAndRemoveUntil(
+      MaterialPageRoute(
+        builder: (context) => const DashboardScreen(userName: userName),
+      ),
+      (route) => false,
+    );
+  }
+
+  void _handleEmergencyBypass() {
+    // Bypass autentikasi langsung ke Dashboard tanpa login/register
+    Navigator.of(context).pushAndRemoveUntil(
+      MaterialPageRoute(
+        builder: (context) => const DashboardScreen(
+          userName: 'Warga Tamu (Mode Darurat)',
+        ),
+      ),
+      (route) => false,
     );
   }
 
@@ -105,178 +155,100 @@ class _RegisterScreenState extends State<RegisterScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: AppColors.backgroundCream,
-      body: SingleChildScrollView(
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            // ==========================================
-            // 1. HEADER SECTION (DARK FOREST GREEN)
-            // Sesuai rect w=390 h=347 fill=#1A3A2A
-            // ==========================================
-            Container(
-              color: AppColors.primaryDark,
-              child: SafeArea(
-                bottom: false,
-                child: Padding(
-                  padding: const EdgeInsets.fromLTRB(24, 16, 24, 36),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      // Logo Row: Emblem Mint + Teks SIGAP
-                      Row(
-                        children: [
-                          Container(
-                            width: 26,
-                            height: 26,
-                            decoration: BoxDecoration(
-                              color: AppColors.mintAccent,
-                              borderRadius: BorderRadius.circular(5.0),
-                            ),
-                            child: const Center(
-                              child: Icon(
-                                Icons.sensors_rounded,
-                                size: 16,
-                                color: AppColors.primaryDark,
-                              ),
-                            ),
-                          ),
-                          const SizedBox(width: 10),
-                          Text(
-                            'SIGAP',
-                            style: GoogleFonts.plusJakartaSans(
-                              fontSize: 19,
-                              fontWeight: FontWeight.w800,
-                              letterSpacing: 1.5,
-                              color: AppColors.textWhite,
-                            ),
-                          ),
-                        ],
-                      ),
+      body: SafeArea(
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 20),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              const SizedBox(height: 10),
 
-                      const SizedBox(height: 32),
-
-                      // Headline: "Siapkan diri sebelum bencana"
-                      Text(
-                        'Siapkan diri sebelum\nbencana',
-                        style: GoogleFonts.plusJakartaSans(
-                          fontSize: 29,
-                          fontWeight: FontWeight.w800,
-                          height: 1.22,
-                          color: AppColors.textWhite,
-                          letterSpacing: -0.5,
-                        ),
-                      ),
-
-                      const SizedBox(height: 16),
-
-                      // Subtitle
-                      Text(
-                        'Buat akun untuk memantau peringatan, membagikan status keluarga, dan menemukan posko terdekat dengan lebih cepat.',
-                        style: GoogleFonts.plusJakartaSans(
-                          fontSize: 14.5,
-                          fontWeight: FontWeight.w400,
-                          height: 1.48,
-                          color: AppColors.textMint.withValues(alpha: 0.95),
-                        ),
+              // ==========================================
+              // 1. HEADER (LOGO, JUDUL & SUB-TEKS)
+              // ==========================================
+              Center(
+                child: Container(
+                  width: 64,
+                  height: 64,
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    shape: BoxShape.circle,
+                    boxShadow: [
+                      BoxShadow(
+                        color: AppColors.mintAccent.withValues(alpha: 0.6),
+                        blurRadius: 16,
+                        spreadRadius: 2,
+                        offset: const Offset(0, 3),
                       ),
                     ],
                   ),
+                  child: ClipOval(
+                    child: Image.asset(
+                      'assets/logo_sigap.png',
+                      width: 64,
+                      height: 64,
+                      fit: BoxFit.cover,
+                      errorBuilder: (context, error, stackTrace) => const Icon(
+                        Icons.shield_rounded,
+                        color: AppColors.primaryDark,
+                        size: 32,
+                      ),
+                    ),
+                  ),
                 ),
               ),
-            ),
 
-            // ==========================================
-            // 2. FORM AREA (WARM CREAM #F7F4EE)
-            // ==========================================
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 28),
-              child: Form(
+              const SizedBox(height: 18),
+
+              Text(
+                'Buat Akun SIGAP',
+                textAlign: TextAlign.center,
+                style: GoogleFonts.plusJakartaSans(
+                  fontSize: 24,
+                  fontWeight: FontWeight.w800,
+                  color: AppColors.textDark,
+                  letterSpacing: -0.3,
+                ),
+              ),
+
+              const SizedBox(height: 6),
+
+              Text(
+                'Satu akun untuk melindungi Anda dan keluarga.',
+                textAlign: TextAlign.center,
+                style: GoogleFonts.plusJakartaSans(
+                  fontSize: 13.5,
+                  fontWeight: FontWeight.w400,
+                  color: AppColors.textSlate,
+                  height: 1.4,
+                ),
+              ),
+
+              const SizedBox(height: 26),
+
+              // ==========================================
+              // 2. FORM REGISTER
+              // ==========================================
+              Form(
                 key: _formKey,
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    // Title: "Create Account"
-                    Text(
-                      'Create Account',
-                      style: GoogleFonts.plusJakartaSans(
-                        fontSize: 27,
-                        fontWeight: FontWeight.w800,
-                        color: AppColors.textDark,
-                        letterSpacing: -0.4,
-                      ),
-                    ),
-
-                    const SizedBox(height: 6),
-
-                    // Subtitle
-                    Text(
-                      'Buat akun untuk memulai penggunaan SIGAP.',
-                      style: GoogleFonts.plusJakartaSans(
-                        fontSize: 14,
-                        fontWeight: FontWeight.w400,
-                        color: AppColors.textSlate,
-                      ),
-                    ),
-
-                    const SizedBox(height: 24),
-
-                    // Social Button 1: Google
-                    _buildSocialButton(
-                      icon: const GoogleLogo(size: 20),
-                      label: 'Sign up with Google',
-                      onTap: () => _handleSocialRegister('Google'),
-                    ),
-
-                    const SizedBox(height: 12),
-
-                    // Social Button 2: Facebook
-                    _buildSocialButton(
-                      icon: const FacebookLogo(size: 20),
-                      label: 'Sign up with Facebook',
-                      onTap: () => _handleSocialRegister('Facebook'),
-                    ),
-
-                    const SizedBox(height: 22),
-
-                    // Divider: "-OR-"
-                    Row(
-                      children: [
-                        Expanded(
-                          child: Container(
-                            height: 1,
-                            color: AppColors.borderLight,
-                          ),
-                        ),
-                        Padding(
-                          padding: const EdgeInsets.symmetric(horizontal: 14),
-                          child: Text(
-                            '-OR-',
-                            style: GoogleFonts.plusJakartaSans(
-                              fontSize: 12.5,
-                              fontWeight: FontWeight.w700,
-                              color: AppColors.textSlate,
-                              letterSpacing: 1.0,
-                            ),
-                          ),
-                        ),
-                        Expanded(
-                          child: Container(
-                            height: 1,
-                            color: AppColors.borderLight,
-                          ),
-                        ),
-                      ],
-                    ),
-
-                    const SizedBox(height: 24),
-
-                    // Input 1: Fullname
-                    _buildInputLabel('Fullname'),
+                    // Field a: Nama Lengkap
+                    _buildInputLabel('Nama Lengkap'),
                     const SizedBox(height: 8),
-                    _buildTextField(
+                    TextFormField(
                       controller: _nameController,
-                      hintText: 'Masukkan nama lengkap',
                       keyboardType: TextInputType.name,
+                      style: GoogleFonts.plusJakartaSans(
+                        fontSize: 14.5,
+                        color: AppColors.textDark,
+                        fontWeight: FontWeight.w600,
+                      ),
+                      decoration: _buildInputDecoration(
+                        hint: 'Masukkan nama lengkap Anda',
+                        icon: Icons.person_outline_rounded,
+                      ),
                       validator: (value) {
                         if (value == null || value.trim().isEmpty) {
                           return 'Nama lengkap tidak boleh kosong';
@@ -288,15 +260,72 @@ class _RegisterScreenState extends State<RegisterScreen> {
                       },
                     ),
 
-                    const SizedBox(height: 18),
+                    const SizedBox(height: 16),
 
-                    // Input 2: Email Address
-                    _buildInputLabel('Email Address'),
+                    // Field b: Nomor HP / WhatsApp (Wajib untuk darurat)
+                    Row(
+                      children: [
+                        _buildInputLabel('Nomor HP / WhatsApp'),
+                        const SizedBox(width: 6),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFFFF0EA),
+                            borderRadius: BorderRadius.circular(4),
+                            border: Border.all(color: AppColors.alertBorderPeach),
+                          ),
+                          child: Text(
+                            'Wajib untuk darurat',
+                            style: GoogleFonts.plusJakartaSans(
+                              fontSize: 10,
+                              fontWeight: FontWeight.w700,
+                              color: AppColors.alertRust,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
                     const SizedBox(height: 8),
-                    _buildTextField(
+                    TextFormField(
+                      controller: _phoneController,
+                      keyboardType: TextInputType.phone,
+                      style: GoogleFonts.plusJakartaSans(
+                        fontSize: 14.5,
+                        color: AppColors.textDark,
+                        fontWeight: FontWeight.w600,
+                      ),
+                      decoration: _buildInputDecoration(
+                        hint: 'Contoh: 081234567890',
+                        icon: Icons.phone_iphone_rounded,
+                      ),
+                      validator: (value) {
+                        if (value == null || value.trim().isEmpty) {
+                          return 'Nomor HP wajib diisi untuk kontak darurat';
+                        }
+                        if (value.trim().length < 9) {
+                          return 'Nomor HP tidak valid';
+                        }
+                        return null;
+                      },
+                    ),
+
+                    const SizedBox(height: 16),
+
+                    // Field c: Email
+                    _buildInputLabel('Email'),
+                    const SizedBox(height: 8),
+                    TextFormField(
                       controller: _emailController,
-                      hintText: 'Masukkan alamat email',
                       keyboardType: TextInputType.emailAddress,
+                      style: GoogleFonts.plusJakartaSans(
+                        fontSize: 14.5,
+                        color: AppColors.textDark,
+                        fontWeight: FontWeight.w600,
+                      ),
+                      decoration: _buildInputDecoration(
+                        hint: 'nama@email.com',
+                        icon: Icons.mail_outline_rounded,
+                      ),
                       validator: (value) {
                         if (value == null || value.trim().isEmpty) {
                           return 'Alamat email tidak boleh kosong';
@@ -309,28 +338,59 @@ class _RegisterScreenState extends State<RegisterScreen> {
                       },
                     ),
 
-                    const SizedBox(height: 18),
+                    const SizedBox(height: 16),
 
-                    // Input 3: Password
-                    _buildInputLabel('Password'),
+                    // Field d: Kata Sandi
+                    _buildInputLabel('Kata Sandi'),
                     const SizedBox(height: 8),
-                    _buildTextField(
+                    TextFormField(
                       controller: _passwordController,
-                      hintText: 'Buat kata sandi',
                       obscureText: !_isPasswordVisible,
-                      suffixIcon: IconButton(
-                        icon: Icon(
-                          _isPasswordVisible
-                              ? Icons.visibility_outlined
-                              : Icons.visibility_off_outlined,
-                          color: AppColors.textSlate,
+                      style: GoogleFonts.plusJakartaSans(
+                        fontSize: 14.5,
+                        color: AppColors.textDark,
+                        fontWeight: FontWeight.w600,
+                      ),
+                      decoration: InputDecoration(
+                        hintText: 'Minimal 8 karakter',
+                        hintStyle: GoogleFonts.plusJakartaSans(
+                          fontSize: 13.5,
+                          color: AppColors.textSlate.withValues(alpha: 0.7),
+                        ),
+                        prefixIcon: const Icon(
+                          Icons.lock_outline_rounded,
+                          color: AppColors.primaryDark,
                           size: 21,
                         ),
-                        onPressed: () {
-                          setState(() {
-                            _isPasswordVisible = !_isPasswordVisible;
-                          });
-                        },
+                        suffixIcon: IconButton(
+                          icon: Icon(
+                            _isPasswordVisible
+                                ? Icons.visibility_outlined
+                                : Icons.visibility_off_outlined,
+                            color: AppColors.textSlate,
+                            size: 21,
+                          ),
+                          onPressed: () {
+                            setState(() {
+                              _isPasswordVisible = !_isPasswordVisible;
+                            });
+                          },
+                        ),
+                        filled: true,
+                        fillColor: Colors.white,
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                          borderSide: const BorderSide(color: AppColors.borderLight, width: 1.2),
+                        ),
+                        enabledBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                          borderSide: const BorderSide(color: AppColors.borderLight, width: 1.2),
+                        ),
+                        focusedBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                          borderSide: const BorderSide(color: AppColors.primaryDark, width: 1.8),
+                        ),
+                        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
                       ),
                       validator: (value) {
                         if (value == null || value.isEmpty) {
@@ -343,19 +403,65 @@ class _RegisterScreenState extends State<RegisterScreen> {
                       },
                     ),
 
-                    const SizedBox(height: 26),
+                    const SizedBox(height: 16),
 
-                    // Submit Button: "Create Account"
+                    // ==========================================
+                    // 3. CHECKBOX PERSETUJUAN
+                    // ==========================================
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        SizedBox(
+                          width: 24,
+                          height: 24,
+                          child: Checkbox(
+                            value: _agreeToTerms,
+                            activeColor: AppColors.primaryDark,
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
+                            onChanged: (val) {
+                              setState(() {
+                                _agreeToTerms = val ?? false;
+                              });
+                            },
+                          ),
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: GestureDetector(
+                            onTap: () {
+                              setState(() {
+                                _agreeToTerms = !_agreeToTerms;
+                              });
+                            },
+                            child: Text(
+                              'Saya setuju dengan Syarat & Ketentuan serta Kebijakan Privasi data lokasi.',
+                              style: GoogleFonts.plusJakartaSans(
+                                fontSize: 12.5,
+                                color: AppColors.textDark,
+                                height: 1.35,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+
+                    const SizedBox(height: 22),
+
+                    // ==========================================
+                    // 4. TOMBOL AKSI
+                    // ==========================================
+                    // Tombol Primary: "BUAT AKUN"
                     SizedBox(
-                      height: 48,
+                      height: 52,
                       child: ElevatedButton(
                         onPressed: _isLoading ? null : _handleRegister,
                         style: ElevatedButton.styleFrom(
                           backgroundColor: AppColors.primaryDark,
-                          foregroundColor: AppColors.textWhite,
+                          foregroundColor: Colors.white,
                           elevation: 0,
                           shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(8.0),
+                            borderRadius: BorderRadius.circular(12),
                           ),
                         ),
                         child: _isLoading
@@ -368,43 +474,97 @@ class _RegisterScreenState extends State<RegisterScreen> {
                                 ),
                               )
                             : Text(
-                                'Create Account',
+                                'BUAT AKUN',
                                 style: GoogleFonts.plusJakartaSans(
-                                  fontSize: 15.5,
-                                  fontWeight: FontWeight.w700,
-                                  letterSpacing: 0.2,
+                                  fontSize: 15,
+                                  fontWeight: FontWeight.w800,
+                                  letterSpacing: 0.8,
                                 ),
                               ),
                       ),
                     ),
 
-                    const SizedBox(height: 22),
+                    const SizedBox(height: 18),
 
-                    // Footer Link: "Already have an account? Log in"
+                    // Divider: "atau"
+                    Row(
+                      children: [
+                        const Expanded(child: Divider(color: AppColors.borderLight, thickness: 1)),
+                        Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 14),
+                          child: Text(
+                            'atau',
+                            style: GoogleFonts.plusJakartaSans(
+                              fontSize: 12.5,
+                              color: AppColors.textSlate,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                        ),
+                        const Expanded(child: Divider(color: AppColors.borderLight, thickness: 1)),
+                      ],
+                    ),
+
+                    const SizedBox(height: 18),
+
+                    // Tombol Outline: "Daftar dengan Google"
+                    SizedBox(
+                      height: 50,
+                      child: OutlinedButton(
+                        onPressed: _isLoading ? null : _handleGoogleRegister,
+                        style: OutlinedButton.styleFrom(
+                          backgroundColor: Colors.white,
+                          side: const BorderSide(color: AppColors.borderLight, width: 1.2),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                        ),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            const GoogleLogo(size: 20),
+                            const SizedBox(width: 10),
+                            Text(
+                              'Daftar dengan Google',
+                              style: GoogleFonts.plusJakartaSans(
+                                fontSize: 14,
+                                fontWeight: FontWeight.w700,
+                                color: AppColors.textDark,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+
+                    const SizedBox(height: 24),
+
+                    // ==========================================
+                    // 5. NAVIGASI KE LOGIN
+                    // ==========================================
                     Row(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
                         Text(
-                          'Already have an account? ',
+                          'Sudah punya akun? ',
                           style: GoogleFonts.plusJakartaSans(
-                            fontSize: 14,
-                            fontWeight: FontWeight.w400,
+                            fontSize: 13.5,
                             color: AppColors.textSlate,
                           ),
                         ),
                         GestureDetector(
                           onTap: () {
-                            Navigator.of(context).push(
+                            Navigator.of(context).pushReplacement(
                               MaterialPageRoute(
                                 builder: (context) => const LoginScreen(),
                               ),
                             );
                           },
                           child: Text(
-                            'Log in',
+                            'Masuk di sini',
                             style: GoogleFonts.plusJakartaSans(
-                              fontSize: 14,
-                              fontWeight: FontWeight.w700,
+                              fontSize: 13.5,
+                              fontWeight: FontWeight.w800,
                               color: AppColors.primaryDark,
                             ),
                           ),
@@ -412,104 +572,90 @@ class _RegisterScreenState extends State<RegisterScreen> {
                       ],
                     ),
 
-                    const SizedBox(height: 42),
+                    const SizedBox(height: 36),
 
                     // ==========================================
-                    // 3. BENEFIT CARD 1: APA YANG AKAN KAMU DAPAT
+                    // 6. 🌟 FITUR PALING PENTING: BYPASS DARURAT
                     // ==========================================
                     Container(
-                      padding: const EdgeInsets.all(20),
                       decoration: BoxDecoration(
-                        color: Colors.white,
-                        borderRadius: BorderRadius.circular(12.0),
-                        border: Border.all(color: AppColors.borderLight, width: 1.0),
-                      ),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            'APA YANG AKAN KAMU DAPAT',
-                            style: GoogleFonts.plusJakartaSans(
-                              fontSize: 12,
-                              fontWeight: FontWeight.w800,
-                              color: AppColors.textSlate,
-                              letterSpacing: 0.9,
-                            ),
-                          ),
-                          const SizedBox(height: 18),
-                          _buildBenefitRow(
-                            icon: Icons.notifications_active_rounded,
-                            text: 'Peringatan bencana lebih cepat',
-                          ),
-                          const SizedBox(height: 14),
-                          _buildBenefitRow(
-                            icon: Icons.people_alt_rounded,
-                            text: 'Status keluarga lebih mudah dipantau',
-                          ),
-                          const SizedBox(height: 14),
-                          _buildBenefitRow(
-                            icon: Icons.location_on_rounded,
-                            text: 'Evakuasi dan posko lebih dekat',
+                        color: const Color(0xFFFFF5F0),
+                        borderRadius: BorderRadius.circular(14),
+                        border: Border.all(color: AppColors.alertTerracotta, width: 1.5),
+                        boxShadow: [
+                          BoxShadow(
+                            color: AppColors.alertTerracotta.withValues(alpha: 0.12),
+                            blurRadius: 10,
+                            offset: const Offset(0, 3),
                           ),
                         ],
                       ),
-                    ),
-
-                    const SizedBox(height: 16),
-
-                    // ==========================================
-                    // 4. BENEFIT CARD 2: LAYANAN YANG TELAH ADA
-                    // ==========================================
-                    Container(
-                      padding: const EdgeInsets.all(20),
-                      decoration: BoxDecoration(
-                        color: AppColors.mintAccent,
-                        borderRadius: BorderRadius.circular(12.0),
-                        border: Border.all(color: AppColors.borderLight, width: 1.0),
-                      ),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            'LAYANAN YANG TELAH ADA',
-                            style: GoogleFonts.plusJakartaSans(
-                              fontSize: 12,
-                              fontWeight: FontWeight.w800,
-                              color: AppColors.textSlate,
-                              letterSpacing: 0.9,
-                            ),
+                      child: InkWell(
+                        onTap: _handleEmergencyBypass,
+                        borderRadius: BorderRadius.circular(14),
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 15),
+                          child: Column(
+                            children: [
+                              Text(
+                                '🚨 MASUK TANPA AKUN (MODE DARURAT)',
+                                textAlign: TextAlign.center,
+                                style: GoogleFonts.plusJakartaSans(
+                                  fontSize: 13.5,
+                                  fontWeight: FontWeight.w900,
+                                  color: AppColors.alertRust,
+                                  letterSpacing: 0.4,
+                                ),
+                              ),
+                              const SizedBox(height: 4),
+                              Text(
+                                'Buka peta evakuasi dan peringatan darurat instan tanpa registrasi.',
+                                textAlign: TextAlign.center,
+                                style: GoogleFonts.plusJakartaSans(
+                                  fontSize: 11,
+                                  color: AppColors.alertRust.withValues(alpha: 0.85),
+                                  fontWeight: FontWeight.w500,
+                                ),
+                              ),
+                            ],
                           ),
-                          const SizedBox(height: 10),
-                          Text(
-                            'Bagian dari SIGAP',
-                            style: GoogleFonts.plusJakartaSans(
-                              fontSize: 20,
-                              fontWeight: FontWeight.w800,
-                              color: AppColors.textDark,
-                            ),
-                          ),
-                          const SizedBox(height: 10),
-                          Text(
-                            'Akun ini akan terhubung dengan layanan peringatan, peta risiko, evakuasi, dan status keluarga yang sudah kamu gunakan.',
-                            style: GoogleFonts.plusJakartaSans(
-                              fontSize: 14,
-                              fontWeight: FontWeight.w400,
-                              height: 1.5,
-                              color: AppColors.textDark.withValues(alpha: 0.8),
-                            ),
-                          ),
-                        ],
+                        ),
                       ),
                     ),
-
-                    const SizedBox(height: 32),
+                    const SizedBox(height: 12),
                   ],
                 ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
+    );
+  }
+
+  InputDecoration _buildInputDecoration({required String hint, required IconData icon}) {
+    return InputDecoration(
+      hintText: hint,
+      hintStyle: GoogleFonts.plusJakartaSans(
+        fontSize: 13.5,
+        color: AppColors.textSlate.withValues(alpha: 0.7),
+      ),
+      prefixIcon: Icon(icon, color: AppColors.primaryDark, size: 21),
+      filled: true,
+      fillColor: Colors.white,
+      border: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(12),
+        borderSide: const BorderSide(color: AppColors.borderLight, width: 1.2),
+      ),
+      enabledBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(12),
+        borderSide: const BorderSide(color: AppColors.borderLight, width: 1.2),
+      ),
+      focusedBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(12),
+        borderSide: const BorderSide(color: AppColors.primaryDark, width: 1.8),
+      ),
+      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
     );
   }
 
@@ -517,122 +663,10 @@ class _RegisterScreenState extends State<RegisterScreen> {
     return Text(
       label,
       style: GoogleFonts.plusJakartaSans(
-        fontSize: 14,
+        fontSize: 13,
         fontWeight: FontWeight.w700,
         color: AppColors.textDark,
       ),
-    );
-  }
-
-  Widget _buildTextField({
-    required TextEditingController controller,
-    required String hintText,
-    TextInputType keyboardType = TextInputType.text,
-    bool obscureText = false,
-    Widget? suffixIcon,
-    String? Function(String?)? validator,
-  }) {
-    return TextFormField(
-      controller: controller,
-      keyboardType: keyboardType,
-      obscureText: obscureText,
-      validator: validator,
-      style: GoogleFonts.plusJakartaSans(
-        fontSize: 14.5,
-        color: AppColors.textDark,
-      ),
-      decoration: InputDecoration(
-        hintText: hintText,
-        hintStyle: GoogleFonts.plusJakartaSans(
-          fontSize: 14,
-          color: AppColors.textSlate.withValues(alpha: 0.75),
-        ),
-        filled: true,
-        fillColor: Colors.white,
-        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 15),
-        suffixIcon: suffixIcon,
-        enabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(8.0),
-          borderSide: const BorderSide(color: AppColors.borderLight, width: 1.0),
-        ),
-        focusedBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(8.0),
-          borderSide: const BorderSide(color: AppColors.primary, width: 1.5),
-        ),
-        errorBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(8.0),
-          borderSide: const BorderSide(color: AppColors.alertAwas, width: 1.0),
-        ),
-        focusedErrorBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(8.0),
-          borderSide: const BorderSide(color: AppColors.alertAwas, width: 1.5),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildSocialButton({
-    required Widget icon,
-    required String label,
-    required VoidCallback onTap,
-  }) {
-    return SizedBox(
-      height: 49,
-      child: OutlinedButton(
-        onPressed: onTap,
-        style: OutlinedButton.styleFrom(
-          backgroundColor: Colors.white,
-          foregroundColor: AppColors.textDark,
-          side: const BorderSide(color: AppColors.borderLight, width: 1.0),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(8.0),
-          ),
-          padding: const EdgeInsets.symmetric(horizontal: 16),
-        ),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            icon,
-            const SizedBox(width: 12),
-            Text(
-              label,
-              style: GoogleFonts.plusJakartaSans(
-                fontSize: 14.5,
-                fontWeight: FontWeight.w600,
-                color: AppColors.textDark,
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildBenefitRow({
-    required IconData icon,
-    required String text,
-  }) {
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.center,
-      children: [
-        Icon(
-          icon,
-          size: 21,
-          color: AppColors.primaryDark,
-        ),
-        const SizedBox(width: 14),
-        Expanded(
-          child: Text(
-            text,
-            style: GoogleFonts.plusJakartaSans(
-              fontSize: 14.5,
-              fontWeight: FontWeight.w700,
-              color: AppColors.textDark,
-              height: 1.25,
-            ),
-          ),
-        ),
-      ],
     );
   }
 }

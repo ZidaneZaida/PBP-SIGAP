@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:sigap/core/theme/app_colors.dart';
+import 'package:sigap/core/widgets/sigap_logo.dart';
 import 'package:sigap/features/alerts/presentation/screens/alerts_screen.dart';
 import 'package:sigap/features/family/presentation/screens/family_assistance_screen.dart';
 import 'package:sigap/features/map/presentation/screens/risk_map_screen.dart';
@@ -76,6 +77,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
     return (words[0][0] + words[1][0]).toUpperCase();
   }
 
+  IconData? _avatarBadgeIcon;
+  Color _avatarBgColor = AppColors.mintAccent;
+  Color _avatarTextColor = AppColors.primaryDark;
+
   // ==========================================
   // ACTION HANDLERS
   // ==========================================
@@ -106,10 +111,20 @@ class _ProfileScreenState extends State<ProfileScreen> {
               contentPadding: EdgeInsets.zero,
               leading: const Icon(Icons.camera_alt_outlined, color: AppColors.primaryDark),
               title: Text('Ambil Foto Kamera', style: GoogleFonts.plusJakartaSans(fontWeight: FontWeight.w600)),
+              subtitle: Text('Gunakan kamera ponsel untuk swafoto profil', style: GoogleFonts.plusJakartaSans(fontSize: 12, color: AppColors.textSlate)),
               onTap: () {
                 Navigator.pop(ctx);
+                setState(() {
+                  _avatarBgColor = AppColors.primaryDark;
+                  _avatarTextColor = Colors.white;
+                  _avatarBadgeIcon = Icons.camera_alt_rounded;
+                });
                 ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Membuka kamera...')),
+                  const SnackBar(
+                    content: Text('Foto profil berhasil diperbarui via kamera! 📸'),
+                    backgroundColor: AppColors.primaryDark,
+                    behavior: SnackBarBehavior.floating,
+                  ),
                 );
               },
             ),
@@ -118,10 +133,20 @@ class _ProfileScreenState extends State<ProfileScreen> {
               contentPadding: EdgeInsets.zero,
               leading: const Icon(Icons.photo_library_outlined, color: AppColors.primaryDark),
               title: Text('Pilih dari Galeri', style: GoogleFonts.plusJakartaSans(fontWeight: FontWeight.w600)),
+              subtitle: Text('Pilih foto dari penyimpanan galeri perangkat', style: GoogleFonts.plusJakartaSans(fontSize: 12, color: AppColors.textSlate)),
               onTap: () {
                 Navigator.pop(ctx);
+                setState(() {
+                  _avatarBgColor = const Color(0xFF0284C7);
+                  _avatarTextColor = Colors.white;
+                  _avatarBadgeIcon = Icons.check_circle_rounded;
+                });
                 ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Membuka galeri...')),
+                  const SnackBar(
+                    content: Text('Foto profil berhasil dipilih dari galeri! 🖼️'),
+                    backgroundColor: AppColors.safeGreen,
+                    behavior: SnackBarBehavior.floating,
+                  ),
                 );
               },
             ),
@@ -220,29 +245,16 @@ class _ProfileScreenState extends State<ProfileScreen> {
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
-        Row(
-          children: [
-            Container(
-              width: 18,
-              height: 18,
-              decoration: BoxDecoration(
-                color: AppColors.primaryDark,
-                borderRadius: BorderRadius.circular(4),
-              ),
-            ),
-            const SizedBox(width: 8),
-            Text(
-              'SIGAP',
-              style: GoogleFonts.plusJakartaSans(
-                fontSize: 17,
-                fontWeight: FontWeight.w900,
-                color: AppColors.primaryDark,
-                letterSpacing: 0.5,
-              ),
-            ),
-          ],
+        const Flexible(
+          child: SigapLogo(
+            size: 26,
+            showText: true,
+            textColor: AppColors.primaryDark,
+          ),
         ),
+        const SizedBox(width: 8),
         Row(
+          mainAxisSize: MainAxisSize.min,
           children: [
             Text(
               'PDG · 09:41',
@@ -312,24 +324,45 @@ class _ProfileScreenState extends State<ProfileScreen> {
           Row(
             children: [
               // Initials Avatar Circle
-              Container(
-                width: 60,
-                height: 60,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  color: AppColors.mintAccent,
-                  border: Border.all(color: AppColors.primaryDark, width: 1.2),
-                ),
-                child: Center(
-                  child: Text(
-                    _initials,
-                    style: GoogleFonts.plusJakartaSans(
-                      fontSize: 20,
-                      fontWeight: FontWeight.w800,
-                      color: AppColors.primaryDark,
+              Stack(
+                children: [
+                  Container(
+                    width: 60,
+                    height: 60,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: _avatarBgColor,
+                      border: Border.all(color: AppColors.primaryDark, width: 1.2),
+                    ),
+                    child: Center(
+                      child: Text(
+                        _initials,
+                        style: GoogleFonts.plusJakartaSans(
+                          fontSize: 20,
+                          fontWeight: FontWeight.w800,
+                          color: _avatarTextColor,
+                        ),
+                      ),
                     ),
                   ),
-                ),
+                  if (_avatarBadgeIcon != null)
+                    Positioned(
+                      right: 0,
+                      bottom: 0,
+                      child: Container(
+                        padding: const EdgeInsets.all(3),
+                        decoration: const BoxDecoration(
+                          color: AppColors.safeGreen,
+                          shape: BoxShape.circle,
+                        ),
+                        child: Icon(
+                          _avatarBadgeIcon,
+                          size: 13,
+                          color: Colors.white,
+                        ),
+                      ),
+                    ),
+                ],
               ),
               const SizedBox(width: 16),
               Expanded(

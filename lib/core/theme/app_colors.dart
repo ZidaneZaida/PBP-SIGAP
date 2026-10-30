@@ -46,4 +46,48 @@ class AppColors {
     ],
     stops: [0.0, 0.5, 1.0],
   );
+
+  // Modern Luxury Gradients & Glassmorphism Tokens
+  static const LinearGradient emeraldLuxuryGradient = LinearGradient(
+    begin: Alignment.topLeft,
+    end: Alignment.bottomRight,
+    colors: [
+      Color(0xFF0E2218),
+      Color(0xFF1A3A2A),
+      Color(0xFF224E38),
+    ],
+  );
+
+  static const LinearGradient sunsetAlertGradient = LinearGradient(
+    begin: Alignment.topLeft,
+    end: Alignment.bottomRight,
+    colors: [
+      Color(0xFFFF7A59),
+      Color(0xFFC44D29),
+    ],
+  );
+
+  static const LinearGradient oceanWaveGradient = LinearGradient(
+    begin: Alignment.topLeft,
+    end: Alignment.bottomRight,
+    colors: [
+      Color(0xFF0277BD),
+      Color(0xFF00ACC1),
+    ],
+  );
+
+  static const LinearGradient safeGreenGradient = LinearGradient(
+    begin: Alignment.topLeft,
+    end: Alignment.bottomRight,
+    colors: [
+      Color(0xFF10B981),
+      Color(0xFF059669),
+    ],
+  );
+
+  static const Color glassWhite = Color(0xEBFFFFFF);
+  static const Color glassBorder = Color(0x66FFFFFF);
+  static const Color neonMint = Color(0xFF22C55E);
+  static const Color oceanCyan = Color(0xFF0284C7);
+  static const Color vibrantAmber = Color(0xFFF59E0B);
 }

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:sigap/core/theme/app_colors.dart';
+import 'package:sigap/core/widgets/sigap_logo.dart';
 import 'package:sigap/features/alerts/presentation/screens/alerts_screen.dart';
 import 'package:sigap/features/map/presentation/screens/risk_map_screen.dart';
 import 'package:sigap/features/settings/presentation/screens/settings_screen.dart';
@@ -856,29 +857,16 @@ class _FamilyAssistanceScreenState extends State<FamilyAssistanceScreen> {
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
-        Row(
-          children: [
-            Container(
-              width: 18,
-              height: 18,
-              decoration: BoxDecoration(
-                color: AppColors.primaryDark,
-                borderRadius: BorderRadius.circular(4),
-              ),
-            ),
-            const SizedBox(width: 8),
-            Text(
-              'SIGAP',
-              style: GoogleFonts.plusJakartaSans(
-                fontSize: 17,
-                fontWeight: FontWeight.w900,
-                color: AppColors.primaryDark,
-                letterSpacing: 0.5,
-              ),
-            ),
-          ],
+        const Flexible(
+          child: SigapLogo(
+            size: 26,
+            showText: true,
+            textColor: AppColors.primaryDark,
+          ),
         ),
+        const SizedBox(width: 8),
         Row(
+          mainAxisSize: MainAxisSize.min,
           children: [
             Text(
               'PDG · 09:41',
@@ -1366,14 +1354,18 @@ class _FamilyAssistanceScreenState extends State<FamilyAssistanceScreen> {
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Text(
-                'Kontak darurat',
-                style: GoogleFonts.plusJakartaSans(
-                  fontSize: 17,
-                  fontWeight: FontWeight.w800,
-                  color: AppColors.textDark,
+              Expanded(
+                child: Text(
+                  'Kontak darurat',
+                  style: GoogleFonts.plusJakartaSans(
+                    fontSize: 17,
+                    fontWeight: FontWeight.w800,
+                    color: AppColors.textDark,
+                  ),
+                  overflow: TextOverflow.ellipsis,
                 ),
               ),
+              const SizedBox(width: 8),
               GestureDetector(
                 onTap: _showEditPrimaryContactModal,
                 child: Text(
@@ -1729,12 +1721,15 @@ class _FamilyAssistanceScreenState extends State<FamilyAssistanceScreen> {
             child: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
-                Text(
-                  'Lihat lokasi evakuasi',
-                  style: GoogleFonts.plusJakartaSans(
-                    fontSize: 13.5,
-                    fontWeight: FontWeight.w800,
-                    color: AppColors.primaryDark,
+                Flexible(
+                  child: Text(
+                    'Lihat lokasi evakuasi',
+                    style: GoogleFonts.plusJakartaSans(
+                      fontSize: 13.5,
+                      fontWeight: FontWeight.w800,
+                      color: AppColors.primaryDark,
+                    ),
+                    overflow: TextOverflow.ellipsis,
                   ),
                 ),
                 const SizedBox(width: 4),
@@ -1854,13 +1849,20 @@ class _FamilyAssistanceScreenState extends State<FamilyAssistanceScreen> {
 
   Widget _buildBottomNavigationBar() {
     return Container(
+      margin: const EdgeInsets.fromLTRB(16, 0, 16, 16),
       decoration: BoxDecoration(
-        color: Colors.white,
-        border: Border(
-          top: BorderSide(color: AppColors.borderLight.withValues(alpha: 0.7), width: 1.0),
-        ),
+        color: Colors.white.withValues(alpha: 0.95),
+        borderRadius: BorderRadius.circular(24),
+        border: Border.all(color: Colors.white, width: 1.5),
+        boxShadow: [
+          BoxShadow(
+            color: AppColors.primaryDark.withValues(alpha: 0.12),
+            blurRadius: 20,
+            offset: const Offset(0, 6),
+          ),
+        ],
       ),
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 6),
       child: SafeArea(
         top: false,
         child: Row(
@@ -1957,30 +1959,40 @@ class _FamilyAssistanceScreenState extends State<FamilyAssistanceScreen> {
     return Expanded(
       child: GestureDetector(
         onTap: onTap,
-        child: Container(
-          height: 56,
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 200),
+          height: 48,
           margin: const EdgeInsets.symmetric(horizontal: 2),
           decoration: BoxDecoration(
-            color: isActive ? AppColors.mintAccent : Colors.transparent,
-            borderRadius: BorderRadius.circular(8),
+            color: isActive ? AppColors.primaryDark : Colors.transparent,
+            borderRadius: BorderRadius.circular(16),
+            boxShadow: isActive
+                ? [
+                    BoxShadow(
+                      color: AppColors.primaryDark.withValues(alpha: 0.25),
+                      blurRadius: 8,
+                      offset: const Offset(0, 2),
+                    ),
+                  ]
+                : null,
           ),
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
               Icon(
                 icon,
-                size: 20,
-                color: isActive ? AppColors.primaryDark : AppColors.textSlate,
+                size: 19,
+                color: isActive ? Colors.white : AppColors.textSlate,
               ),
-              const SizedBox(height: 3),
+              const SizedBox(height: 2),
               Text(
                 label,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 style: GoogleFonts.plusJakartaSans(
-                  fontSize: 10.5,
+                  fontSize: 10,
                   fontWeight: isActive ? FontWeight.w800 : FontWeight.w500,
-                  color: isActive ? AppColors.primaryDark : AppColors.textSlate,
+                  color: isActive ? Colors.white : AppColors.textSlate,
                 ),
               ),
             ],
