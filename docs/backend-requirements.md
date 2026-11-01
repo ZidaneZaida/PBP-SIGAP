@@ -164,28 +164,34 @@ Target disesuaikan dengan kemampuan free tier — angka yang tidak dapat dijamin
 ```env
 # Django core
 SECRET_KEY=ganti-dengan-random-string-panjang
-DEBUG=False
-ALLOWED_HOSTS=sigap-backend.onrender.com
-TIME_ZONE=Asia/Jakarta
+DEBUG=True            # False di produksi
+ALLOWED_HOSTS=localhost,127.0.0.1
 
-# Database — Supavisor SESSION pooler (wajib, IPv4-compatible)
-# Format: postgresql://postgres.[ref]:[password]@aws-0-[region].pooler.supabase.com:5432/postgres
+# Database — Supabase SESSION pooler (port 5432). JANGAN port 6543.
+# Dev DAN produksi memakai Supabase (tidak ada DB lokal).
 DATABASE_URL=postgresql://postgres.[ref]:[password]@aws-0-ap-southeast-1.pooler.supabase.com:5432/postgres
 CONN_MAX_AGE=0
+
+# Testing
+TEST_DB_NAME=           # isi bila project test berbeda dari DATABASE_URL
+ALLOW_REMOTE_TESTS=True # wajib true bila host DB remote (Supabase)
 
 # JWT
 ACCESS_TOKEN_LIFETIME_MINUTES=60
 REFRESH_TOKEN_LIFETIME_DAYS=7
 
-# FCM
+# Frontend (tautan reset password di email)
+FRONTEND_BASE_URL=http://localhost:3000
+
+# FCM — bila kosong, push notification dilewati tanpa error
 FIREBASE_CREDENTIALS_JSON={"type":"service_account",...}
 
 # CORS
 CORS_ALLOWED_ORIGINS=https://sigap-web.onrender.com,http://localhost:3000
 NUM_PROXIES=1
 
-# Email — Brevo, port 2525 (port 465/587 diblokir Render)
-EMAIL_BACKEND=django.core.mail.backends.smtp.EmailBackend
+# Email — Brevo, port 2525 (port 25/465/587 diblokir Render).
+# Bila EMAIL_HOST_USER kosong, Django memakai console backend.
 EMAIL_HOST=smtp-relay.brevo.com
 EMAIL_PORT=2525
 EMAIL_USE_TLS=True
@@ -196,12 +202,23 @@ DEFAULT_FROM_EMAIL=SIGAP <no-reply@sigap.app>
 # Supabase Storage
 SUPABASE_URL=https://[ref].supabase.co
 SUPABASE_SERVICE_KEY=eyJ...
+SUPABASE_BUCKET_AVATARS=avatars
 
-# Endpoint internal (dipanggil GitHub Actions, opsional)
+# Endpoint internal (dijadwalkan GitHub Actions, opsional)
 INTERNAL_SYNC_TOKEN=random-string-panjang
+
+# Integrasi BMKG
+BMKG_GEMPA_URL=https://data.bmkg.go.id/DataMKG/TEWS/gempadirasakan.json
+PADANG_LAT=-0.9492
+PADANG_LON=100.3543
+PADANG_RADIUS_KM=300
+BMKG_CACHE_TTL=60
 ```
 
-> **Catatan:** `db.[ref].supabase.co:5432` (direct connection) hanya IPv6 — koneksi dari Render akan gagal. Gunakan pooler.
+> **Catatan:**
+> - `db.[ref].supabase.co:5432` (direct connection) hanya IPv6 — koneksi akan gagal. Gunakan pooler.
+> - `python manage.py test` membuat database `test_postgres` dan butuh privilege `CREATEDB`. Bila ditolak, lihat [`backend-implementation.md`](./backend-implementation.md).
+> - `ALLOW_REMOTE_TESTS=True` sengaja dipakai karena DB dev berada di Supabase; guard ini mencegah test tak sengaja menembak DB produksi.
 
 ---
 

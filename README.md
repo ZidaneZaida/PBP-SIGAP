@@ -19,33 +19,33 @@ PBP-SIGAP/
 |---|---|
 | Python | 3.13+ (termasuk `venv` + `pip`) |
 | Flutter | 3.47+ (Dart 3.13) |
-| Docker + Compose | untuk PostgreSQL lokal |
+| Akun Supabase | free tier (database dev **dan** produksi) |
 
 Instalasi prasyarat di Debian/Ubuntu:
 
 ```bash
 sudo apt install python3.13-venv
-sudo usermod -aG docker "$USER"   # logout lalu login agar berlaku
 ```
 
-Jika Docker tidak memungkinkan, buat project kedua di Supabase dan arahkan
-`DATABASE_URL` ke connection string **session pooler** (port 5432).
+Tidak ada database lokal: dev & produksi memakai Supabase (lihat `docs/backend-implementation.md`).
 
 ## Menjalankan backend
 
 ```bash
 cd backend
 python3 -m venv .venv && source .venv/bin/activate
-pip install -r requirements-dev.txt
-cp .env.example .env          # isi SECRET_KEY & DATABASE_URL
-docker compose up -d          # PostgreSQL 16 di localhost:5432
+pip install -U pip && pip install -r requirements-dev.txt
+cp .env.example .env      # isi DATABASE_URL (session pooler) + DEBUG=True
+python manage.py makemigrations
 python manage.py migrate
+python manage.py seed_demo
+python manage.py createsuperuser
 python manage.py runserver
 ```
 
 Cek: `curl http://127.0.0.1:8000/api/health/`
 
-Dokumentasi lengkap: [`docs/README.md`](docs/README.md)
+Panduan lengkap + troubleshooting: [`docs/backend-implementation.md`](docs/backend-implementation.md)
 
 ## Menjalankan aplikasi
 

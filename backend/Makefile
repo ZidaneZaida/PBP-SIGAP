@@ -1,4 +1,4 @@
-.PHONY: install db-up db-down run migrate makemigrations test lint format superuser shell
+.PHONY: install run migrate makemigrations test check lint format superuser shell seed
 
 VENV := .venv
 PY := $(VENV)/bin/python
@@ -10,14 +10,11 @@ install:
 	$(PIP) install -U pip
 	$(PIP) install -r requirements-dev.txt
 
-db-up:
-	docker compose up -d
-
-db-down:
-	docker compose down
-
 run:
 	$(PY) manage.py runserver 0.0.0.0:8000
+
+check:
+	$(PY) manage.py check
 
 migrate:
 	$(PY) manage.py migrate
@@ -26,7 +23,10 @@ makemigrations:
 	$(PY) manage.py makemigrations
 
 test:
-	$(PY) manage.py test --parallel 1
+	$(PY) manage.py test --keepdb
+
+seed:
+	$(PY) manage.py seed_demo
 
 lint:
 	$(RUFF) check .

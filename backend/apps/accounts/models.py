@@ -67,3 +67,53 @@ class User(AbstractBaseUser, PermissionsMixin):
     @property
     def is_editor(self):
         return self.role in {self.Role.EDITOR, self.Role.SUPERADMIN}
+
+class UserProfile(models.Model):
+    """Data profil opsional + preferensi notifikasi (digabung)."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    user = models.OneToOneField(
+        User, on_delete=models.CASCADE, related_name="profile"
+    )
+    phone = models.CharField(max_length=20, blank=True)
+    photo_url = models.TextField(blank=True)
+    primary_area = models.CharField(max_length=100, blank=True, default="Kota Padang")
+    address_note = models.TextField(blank=True)
+    alert_enabled = models.BooleanField(default=True)
+    news_enabled = models.BooleanField(default=True)
+    family_enabled = models.BooleanField(default=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = "user_profiles"
+        verbose_name = "Profil"
+        verbose_name_plural = "Profil"
+
+    def __str__(self):
+        return f"Profil {self.user_id}"
+
+
+class DeviceToken(models.Model):
+    """Token FCM. Satu device = satu token (unique)."""
+
+    class Platform(models.TextChoices):
+        ANDROID = "android", "Android"
+        WEB = "web", "Web"
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    user = models.ForeignKey(
+        User, on_delete=models.CASCADE, related_name="device_tokens"
+    )
+    fcm_token = models.TextField(unique=True)
+    platform = models.CharField(
+        max_length=10, choices=Platform.choices, default=Platform.ANDROID
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    last_used_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = "device_tokens"
+        ordering = ["-created_at"]
+
+    def __str__(self):
+        return f"{self.platform} {self.fcm_token[:12]}"

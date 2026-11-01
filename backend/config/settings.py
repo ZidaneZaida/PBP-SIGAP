@@ -1,9 +1,11 @@
 """Settings SIGAP — satu file, dibedakan lewat environment variable."""
 
+import sys
 from datetime import timedelta
 from pathlib import Path
 
 import environ
+from django.core.exceptions import ImproperlyConfigured
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
@@ -35,6 +37,12 @@ THIRD_PARTY_APPS = [
 LOCAL_APPS = [
     "apps.common",
     "apps.accounts",
+    "apps.alerts",
+    "apps.news",
+    "apps.map",
+    "apps.guides",
+    "apps.family",
+    "apps.notifications",
 ]
 
 INSTALLED_APPS = DJANGO_APPS + THIRD_PARTY_APPS + LOCAL_APPS
@@ -81,6 +89,21 @@ DATABASES = {
         default="postgres://postgres:postgres@127.0.0.1:5432/sigap",
     )
 }
+
+TEST_DB_NAME = env("TEST_DB_NAME", default="")
+if TEST_DB_NAME:
+    DATABASES["default"]["TEST"] = {"NAME": TEST_DB_NAME}
+
+if "test" in sys.argv:
+    _host = str(DATABASES["default"].get("HOST") or "")
+    if _host not in {"", "localhost", "127.0.0.1"} and not env.bool(
+        "ALLOW_REMOTE_TESTS", default=False
+    ):
+        raise ImproperlyConfigured(
+            f"Test diarahkan ke database remote ({_host}). "
+            "Set ALLOW_REMOTE_TESTS=True hanya bila DB tersebut bukan produksi."
+        )
+
 DATABASES["default"]["CONN_MAX_AGE"] = env.int("CONN_MAX_AGE", default=0)
 DATABASES["default"]["DISABLE_SERVER_SIDE_CURSORS"] = True
 
@@ -121,8 +144,9 @@ REST_FRAMEWORK = {
     "DEFAULT_THROTTLE_CLASSES": ["rest_framework.throttling.AnonRateThrottle"],
     "DEFAULT_THROTTLE_RATES": {
         "anon": "120/min",
-        "login": "5/10min",
-        "register": "10/hour",
+        "login": "10/10min",
+        "register": "20/hour",
+        "password_reset": "5/hour",
     },
     "TEST_REQUEST_DEFAULT_FORMAT": "json",
 }
@@ -204,21 +228,17 @@ EMAIL_BACKEND = (
 )
 
 # --------------------------------------------------------------------------
-# Firebase Cloud Messaging
+# Integrasi eksternal
 # --------------------------------------------------------------------------
 FIREBASE_CREDENTIALS_JSON = env("FIREBASE_CREDENTIALS_JSON", default="")
 
-# --------------------------------------------------------------------------
-# Supabase Storage
-# --------------------------------------------------------------------------
 SUPABASE_URL = env("SUPABASE_URL", default="")
 SUPABASE_SERVICE_KEY = env("SUPABASE_SERVICE_KEY", default="")
 SUPABASE_BUCKET_AVATARS = env("SUPABASE_BUCKET_AVATARS", default="avatars")
 
-# --------------------------------------------------------------------------
-# Internal / integrasi eksternal
-# --------------------------------------------------------------------------
 INTERNAL_SYNC_TOKEN = env("INTERNAL_SYNC_TOKEN", default="")
+FRONTEND_BASE_URL = env("FRONTEND_BASE_URL", default="http://localhost:3000")
+
 BMKG_GEMPA_URL = env(
     "BMKG_GEMPA_URL",
     default="https://data.bmkg.go.id/DataMKG/TEWS/gempadirasakan.json",

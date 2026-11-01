@@ -10,6 +10,7 @@ Folder ini berisi seluruh dokumentasi teknis untuk pengembangan backend **SIGAP 
 | [`backend-requirements.md`](./backend-requirements.md) | Kebutuhan sistem & spesifikasi teknis backend (v2.0) |
 | [`database-schema.md`](./database-schema.md) | Model dan skema tabel (PostgreSQL via Supabase, tanpa PostGIS) |
 | [`api-documentation.md`](./api-documentation.md) | Dokumentasi seluruh endpoint REST API (51 endpoint) |
+| [`backend-implementation.md`](./backend-implementation.md) | Status implementasi, langkah manual, troubleshooting |
 
 ## 📦 Dokumen Produk
 

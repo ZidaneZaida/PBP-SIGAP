@@ -1,7 +1,7 @@
 from django.contrib import admin
 from django.contrib.auth.admin import UserAdmin as BaseUserAdmin
 
-from apps.accounts.models import User
+from apps.accounts.models import DeviceToken, User, UserProfile
 
 
 @admin.register(User)
@@ -27,3 +27,15 @@ class UserAdmin(BaseUserAdmin):
             },
         ),
     )
+
+@admin.register(UserProfile)
+class UserProfileAdmin(admin.ModelAdmin):
+    list_display = ("user", "phone", "primary_area", "alert_enabled", "updated_at")
+    search_fields = ("user__email", "user__full_name", "phone")
+
+
+@admin.register(DeviceToken)
+class DeviceTokenAdmin(admin.ModelAdmin):
+    list_display = ("user", "platform", "created_at", "last_used_at")
+    search_fields = ("user__email", "fcm_token")
+    list_filter = ("platform",)

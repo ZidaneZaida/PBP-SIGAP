@@ -6,7 +6,33 @@ from django.urls import include, path
 urlpatterns = [
     path("admin/", admin.site.urls),
     path("api/", include("apps.common.urls")),
+    path("api/", include("apps.accounts.urls")),
+    path("api/", include("apps.alerts.urls")),
+    path("api/", include("apps.news.urls")),
+    path("api/", include("apps.map.urls")),
+    path("api/", include("apps.guides.urls")),
+    path("api/", include("apps.family.urls")),
 ]
 
 admin.site.site_header = "SIGAP — Siaga Bencana Kota Padang"
 admin.site.site_title = "SIGAP Admin"
+
+from django.http import JsonResponse
+
+
+def handler404(request, exception):
+    return JsonResponse(
+        {"status": "error", "code": "NOT_FOUND", "message": "Endpoint tidak ditemukan."},
+        status=404,
+    )
+
+
+def handler500(request):
+    return JsonResponse(
+        {
+            "status": "error",
+            "code": "SERVER_ERROR",
+            "message": "Terjadi kesalahan pada server.",
+        },
+        status=500,
+    )
