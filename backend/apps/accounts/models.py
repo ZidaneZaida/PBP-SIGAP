@@ -2,6 +2,8 @@ import uuid
 
 from django.contrib.auth.models import AbstractBaseUser, BaseUserManager, PermissionsMixin
 from django.db import models
+from django.db.models.signals import post_save
+from django.dispatch import receiver
 from django.utils import timezone
 
 
@@ -117,3 +119,10 @@ class DeviceToken(models.Model):
 
     def __str__(self):
         return f"{self.platform} {self.fcm_token[:12]}"
+
+
+@receiver(post_save, sender=User)
+def ensure_user_profile(sender, instance, created, **kwargs):
+    """Setiap user wajib punya profil (dipakai preferensi & FCM)."""
+    if created:
+        UserProfile.objects.get_or_create(user=instance)

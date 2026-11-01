@@ -41,9 +41,9 @@ def api_exception_handler(exc, context):
 
     payload = {
         "status": "error",
-        "code": getattr(exc, "default_code", None) or CODE_BY_STATUS.get(
-            response.status_code, "ERROR"
-        ),
+        "code": CODE_BY_STATUS.get(response.status_code)
+        or getattr(exc, "default_code", None)
+        or "ERROR",
         "message": message,
     }
     if errors:
