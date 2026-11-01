@@ -1,0 +1,11 @@
+[tool.ruff]
+line-length = 100
+target-version = "py313"
+exclude = ["**/migrations/**", ".venv", "staticfiles"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "DJ"]
+ignore = ["E501"]
+
+[tool.ruff.lint.per-file-ignores]
+"**/tests/**" = ["B011"]
