@@ -1,65 +1,87 @@
 # API Documentation — SIGAP Backend
 
-**Versi:** 1.0  
-**Base URL Produksi:** `https://sigap-backend.onrender.com`  
-**Base URL Development:** `http://localhost:8000`  
-**Format:** REST API JSON  
-**Autentikasi:** JWT Bearer Token (`Authorization: Bearer <access_token>`)
+**Versi:** 2.0 (hasil audit 11 Februari 2026)
+**Base URL Produksi:** `https://sigap-backend.onrender.com`
+**Base URL Development:** `http://localhost:8000`
+**Format:** REST API JSON
+**Autentikasi:** JWT Bearer (`Authorization: Bearer <access_token>`)
 
 ---
 
 ## Konvensi Umum
 
-### Format Response Sukses
+### Amplop Response
+
+Semua response (kecuali respons mentah GeoJSON yang tetap **dibungkus** di dalam `data`) memakai bentuk berikut.
+
+**Sukses:**
 ```json
-{
-  "status": "success",
-  "data": { ... },
-  "message": "Operasi berhasil"
-}
+{ "status": "success", "data": { }, "message": "Operasi berhasil" }
 ```
 
-### Format Response Gagal
+**Gagal:**
 ```json
 {
   "status": "error",
   "code": "VALIDATION_ERROR",
-  "message": "Email sudah terdaftar",
-  "errors": {
-    "email": ["Email ini sudah digunakan."]
-  }
+  "message": "Data tidak valid",
+  "errors": { "email": ["Email ini sudah digunakan."] }
 }
 ```
 
-### HTTP Status Codes
+### Pagination
+
+`count`, `next`, `previous`, `results` berada di **level atas**, bukan di dalam `data`:
+
+```json
+{
+  "status": "success",
+  "count": 42,
+  "next": "https://sigap-backend.onrender.com/api/alerts/?page=2",
+  "previous": null,
+  "results": [ { } ]
+}
+```
+
+Default `page_size=10`, maksimum 30 (alerts/news), 50 (assistance-points).
+
+### HTTP Status
+
 | Code | Arti |
 |---|---|
-| `200 OK` | Request berhasil |
-| `201 Created` | Data berhasil dibuat |
-| `400 Bad Request` | Validasi input gagal |
-| `401 Unauthorized` | Token tidak valid atau kadaluarsa |
-| `403 Forbidden` | Tidak memiliki izin (role tidak cukup) |
-| `404 Not Found` | Data tidak ditemukan |
-| `429 Too Many Requests` | Rate limit tercapai |
-| `500 Internal Server Error` | Error server |
+| `200` | Berhasil |
+| `201` | Dibuat |
+| `204` | Berhasil tanpa body |
+| `400` | Validasi gagal |
+| `401` | Token tidak valid/kadaluarsa |
+| `403` | Role tidak cukup / bukan anggota grup |
+| `404` | Tidak ditemukan |
+| `409` | Konflik (sudah menjadi anggota, admin terakhir, kode masih berlaku) |
+| `429` | Rate limit |
+| `500` | Error server |
 
-### Aturan Autentikasi
+### Aturan Akses
+
 | Simbol | Keterangan |
 |---|---|
-| 🔓 | Publik — tidak perlu token |
-| 🔒 | Butuh token JWT login (semua role) |
-| 👮 | Butuh role `officer` atau `superadmin` |
-| ✏️ | Butuh role `editor` atau `superadmin` |
-| 🛡️ | Butuh role `superadmin` |
+| 🔓 | Publik |
+| 🔒 | Butuh JWT (semua role) |
+| 👮 | `officer` atau `superadmin` |
+| ✏️ | `editor` atau `superadmin` |
+| 🛡️ | `superadmin` |
+| 👪 | Anggota grup aktif (`family_memberships.status='active'`) |
+
+### Catatan Operasional
+
+- Instance Render Free spin down setelah 15 menit idle. Request pertama dapat memakan ±50 detik. Frontend wajib menampilkan skeleton loading.
+- `X-Request-ID` dikembalikan pada setiap response untuk keperluan log.
 
 ---
 
-## 1. Autentikasi & Akun
+## 1. Autentikasi
 
 ### `POST /api/auth/register/` 🔓
-Mendaftarkan akun baru.
 
-**Request Body:**
 ```json
 {
   "email": "warga@gmail.com",
@@ -69,142 +91,118 @@ Mendaftarkan akun baru.
 }
 ```
 
-**Validasi:**
-- `email` — harus format email valid, belum pernah terdaftar
-- `password` — minimal 8 karakter, mengandung huruf dan angka
-- `password_confirm` — harus sama dengan `password`
+**Validasi:** email format + unik; password ≥ 8 karakter, mengandung huruf dan angka; `password_confirm` sama.
 
 **Response 201:**
 ```json
 {
   "status": "success",
   "data": {
-    "user": {
-      "id": "uuid-...",
-      "email": "warga@gmail.com",
-      "full_name": "Budi Santoso",
-      "role": "citizen"
-    },
-    "tokens": {
-      "access": "eyJ...",
-      "refresh": "eyJ..."
-    }
+    "user": { "id": "uuid", "email": "warga@gmail.com", "full_name": "Budi Santoso", "role": "citizen" },
+    "tokens": { "access": "eyJ...", "refresh": "eyJ..." }
   },
   "message": "Akun berhasil dibuat"
 }
 ```
 
+Rate limit: 10 request / IP / jam.
+
 ---
 
 ### `POST /api/auth/login/` 🔓
-Masuk ke akun dan mendapatkan token JWT.
 
-**Request Body:**
 ```json
-{
-  "email": "warga@gmail.com",
-  "password": "Password123"
-}
+{ "email": "warga@gmail.com", "password": "Password123" }
 ```
 
-**Response 200:**
-```json
-{
-  "status": "success",
-  "data": {
-    "user": {
-      "id": "uuid-...",
-      "email": "warga@gmail.com",
-      "full_name": "Budi Santoso",
-      "role": "citizen"
-    },
-    "tokens": {
-      "access": "eyJ...",
-      "refresh": "eyJ..."
-    }
-  }
-}
-```
+**Response 200:** sama seperti register.
+
+Rate limit: 5 kegagalan / IP / 10 menit → `429` dengan `Retry-After`.
 
 ---
 
 ### `POST /api/auth/token/refresh/` 🔓
-Memperbarui access token menggunakan refresh token.
 
-**Request Body:**
 ```json
-{
-  "refresh": "eyJ..."
-}
+{ "refresh": "eyJ..." }
 ```
 
 **Response 200:**
 ```json
-{
-  "access": "eyJ..."
-}
+{ "status": "success", "data": { "access": "eyJ...", "refresh": "eyJ..." } }
 ```
+
+Rotation aktif: refresh lama masuk blacklist.
 
 ---
 
 ### `POST /api/auth/logout/` 🔒
-Logout dan blacklist refresh token.
 
-**Request Body:**
 ```json
-{
-  "refresh": "eyJ..."
-}
+{ "refresh": "eyJ..." }
 ```
 
-**Response 200:**
-```json
-{
-  "status": "success",
-  "message": "Logout berhasil"
-}
-```
+**Response 200:** `{ "status": "success", "message": "Logout berhasil" }`
 
 ---
 
 ### `POST /api/auth/password/reset/` 🔓
-Memulai proses reset password (kirim email).
 
-**Request Body:**
 ```json
-{
-  "email": "warga@gmail.com"
-}
+{ "email": "warga@gmail.com" }
 ```
+
+Selalu `200`, baik email terdaftar maupun tidak (mencegah enumerasi akun).
 
 **Response 200:**
 ```json
-{
-  "status": "success",
-  "message": "Link reset password telah dikirim ke email Anda."
-}
+{ "status": "success", "message": "Jika email terdaftar, tautan reset telah dikirim." }
 ```
-
-> ⚠️ **Catatan Tim:** Response selalu 200 meskipun email tidak ditemukan (security best practice — jangan bocorkan apakah email terdaftar).
 
 ---
 
-### `GET /api/me/` 🔒
-Melihat data profil pengguna yang sedang login.
+### `POST /api/auth/password/reset/confirm/` 🔓
 
-**Response 200:**
+```json
+{
+  "uid": "MQ",
+  "token": "c9x1-8f2a0b7d",
+  "new_password": "PasswordBaru123",
+  "new_password_confirm": "PasswordBaru123"
+}
+```
+
+**Response 200:** `{ "status": "success", "message": "Kata sandi berhasil diubah." }`
+**Response 400:** `{ "status": "error", "code": "INVALID_TOKEN", "message": "Tautan tidak valid atau sudah kedaluwarsa." }`
+
+---
+
+### `POST /api/auth/password/change/` 🔒
+
+```json
+{ "old_password": "Password123", "new_password": "PasswordBaru123" }
+```
+
+**Response 200:** `{ "status": "success", "message": "Kata sandi diperbarui." }`
+
+---
+
+## 2. Profil Saya
+
+### `GET /api/me/` 🔒
+
 ```json
 {
   "status": "success",
   "data": {
-    "id": "uuid-...",
+    "id": "uuid",
     "email": "warga@gmail.com",
     "full_name": "Budi Santoso",
     "role": "citizen",
     "date_joined": "2026-10-15T08:00:00Z",
     "profile": {
       "phone": "08123456789",
-      "photo_url": "https://xyz.supabase.co/storage/v1/object/...",
+      "photo_url": "https://[ref].supabase.co/storage/v1/object/public/avatars/...",
       "primary_area": "Padang Barat",
       "address_note": "Jl. Veteran No. 12"
     }
@@ -215,9 +213,9 @@ Melihat data profil pengguna yang sedang login.
 ---
 
 ### `PATCH /api/me/` 🔒
-Memperbarui profil pengguna.
 
-**Request Body (semua field opsional):**
+Semua field opsional.
+
 ```json
 {
   "full_name": "Budi Santoso Baru",
@@ -229,256 +227,284 @@ Memperbarui profil pengguna.
 }
 ```
 
+`role` **tidak dapat** diubah lewat endpoint ini (hanya Django Admin).
+
 ---
 
 ### `POST /api/me/upload-photo/` 🔒
-Upload foto profil (multipart form-data).
 
-**Request:** `multipart/form-data`
-- `photo` — file gambar (JPEG/PNG, maks 5 MB)
+`multipart/form-data`, field `photo` (JPEG/PNG, maks 5 MB).
 
 **Response 200:**
 ```json
-{
-  "status": "success",
-  "data": {
-    "photo_url": "https://xyz.supabase.co/storage/v1/object/..."
-  }
-}
+{ "status": "success", "data": { "photo_url": "https://[ref].supabase.co/storage/v1/object/public/avatars/uuid.jpg" } }
 ```
 
 ---
 
 ### `GET /api/me/preferences/` 🔒
-Melihat preferensi notifikasi.
 
-**Response 200:**
 ```json
 {
-  "alert_enabled": true,
-  "news_enabled": true,
-  "family_enabled": true
+  "status": "success",
+  "data": { "alert_enabled": true, "news_enabled": true, "family_enabled": true }
 }
 ```
 
 ---
 
 ### `PATCH /api/me/preferences/` 🔒
-Memperbarui preferensi notifikasi.
 
-**Request Body:**
 ```json
-{
-  "alert_enabled": true,
-  "news_enabled": false,
-  "family_enabled": true
-}
+{ "alert_enabled": true, "news_enabled": false, "family_enabled": true }
 ```
+
+> `alert_enabled=false` tetap tidak mematikan peringatan darurat level `awas` (kebijakan keselamatan).
 
 ---
 
 ### `POST /api/me/device-token/` 🔒
-Mendaftarkan atau memperbarui FCM device token.
 
-**Request Body:**
 ```json
-{
-  "fcm_token": "fcm-token-dari-firebase-sdk...",
-  "platform": "android"
-}
+{ "fcm_token": "fcm-token...", "platform": "android" }
 ```
+
+`platform` ∈ `android`, `web`. Token yang sudah terdaftar untuk user lain dipindahkan ke user ini (`update_or_create`).
+
+**Response 201:** `{ "status": "success", "message": "Token perangkat terdaftar." }`
 
 ---
 
-## 2. Peringatan Bencana (Alerts)
+### `DELETE /api/me/device-token/` 🔒
 
-### `GET /api/alerts/` 🔓
-Mendapatkan daftar peringatan bencana (riwayat dan aktif).
+```json
+{ "fcm_token": "fcm-token..." }
+```
 
-**Query Parameters:**
-| Parameter | Tipe | Default | Keterangan |
-|---|---|---|---|
-| `status` | string | `active` | Filter: `active`, `expired`, `cancelled`, `all` |
-| `disaster_type` | string | - | Filter: `earthquake`, `tsunami`, `flood`, `landslide` |
-| `page` | integer | `1` | Nomor halaman |
-| `page_size` | integer | `10` | Jumlah item per halaman (maks 50) |
+Dipanggil sebelum user logout agar tidak menerima notifikasi akun lama.
+
+---
+
+### `DELETE /api/me/` 🔒
+
+Menghapus akun. **Tindakan permanen.**
+
+Perilaku:
+- `email` diganti `deleted-<uuid>@sigap.invalid`, `full_name` → `Pengguna Dihapus`, password di-unusable-kan.
+- `photo_url` dihapus dari Supabase Storage.
+- `family_memberships` → `status='rejected'`, `is_group_admin=False`; grup tanpa admin aktif ditandai untuk peninjauan.
+- `safety_statuses`, `device_tokens` dihapus.
+- `audit_logs` dipertahankan (aktor menjadi `null`).
+
+**Response 200:** `{ "status": "success", "message": "Akun dihapus." }`
+
+---
+
+## 3. Dashboard
+
+### `GET /api/dashboard/` 🔓
+
+Satu request untuk layar utama. Field yang datanya kosong dikirim `null` — frontend wajib menampilkan "Data belum tersedia".
 
 **Response 200:**
 ```json
 {
   "status": "success",
   "data": {
-    "count": 42,
-    "next": "/api/alerts/?page=2",
-    "previous": null,
-    "results": [
-      {
-        "id": "uuid-...",
-        "disaster_type": "earthquake",
-        "title": "Gempa M5.8 Wilayah Padang",
-        "severity": "siaga",
-        "status": "active",
-        "affected_area": "24 km Barat Daya Kota Padang",
-        "source": {
-          "name": "BMKG",
-          "url": "https://bmkg.go.id"
-        },
-        "location": {
-          "latitude": -0.95,
-          "longitude": 100.35
-        },
-        "published_at": "2026-10-31T02:30:00Z",
-        "expires_at": null
-      }
-    ]
+    "alert": {
+      "id": "uuid",
+      "disaster_type": "earthquake",
+      "title": "Gempa M5.8, 24 km Barat Daya Kota Padang",
+      "severity": null,
+      "status": "active",
+      "affected_area": "24 km Barat Daya Kota Padang",
+      "magnitude": 5.8,
+      "source_name": "BMKG",
+      "published_at": "2026-10-31T02:30:00Z"
+    },
+    "news": [
+      { "id": "uuid", "title": "BPBD Padang Imbau Warga Waspada Banjir", "category": "flood", "published_at": "2026-10-30T09:00:00Z" }
+    ],
+    "family_summary": {
+      "group_id": "uuid",
+      "group_name": "Keluarga Pak Ahmad",
+      "active_members": 4,
+      "safe": 2,
+      "need_help": 1,
+      "no_report": 1
+    },
+    "assistance_point_count": 27,
+    "generated_at": "2026-10-31T02:31:00Z"
   }
+}
+```
+
+`family_summary` bernilai `null` bila user belum bergabung ke grup mana pun.
+`alert` bernilai `null` bila tidak ada peringatan aktif.
+
+---
+
+## 4. Peringatan Bencana (Alerts)
+
+### `GET /api/alerts/` 🔓
+
+| Parameter | Default | Keterangan |
+|---|---|---|
+| `status` | `active` | `active`, `expired`, `cancelled`, `all` |
+| `disaster_type` | – | `earthquake`, `tsunami`, `flood`, `landslide`, `extreme_weather` |
+| `date_from` / `date_to` | – | ISO date, filter `published_at` |
+| `page` / `page_size` | 1 / 10 | Maks 30 |
+
+**Response 200 (paginated):**
+```json
+{
+  "status": "success",
+  "count": 42,
+  "next": "/api/alerts/?page=2",
+  "previous": null,
+  "results": [
+    {
+      "id": "uuid",
+      "disaster_type": "earthquake",
+      "title": "Gempa M5.8 Wilayah Padang",
+      "severity": null,
+      "status": "active",
+      "affected_area": "24 km Barat Daya Kota Padang",
+      "magnitude": 5.8,
+      "depth_km": 10,
+      "source": { "name": "BMKG", "source_url": "https://data.bmkg.go.id" },
+      "published_at": "2026-10-31T02:30:00Z",
+      "expires_at": null
+    }
+  ]
 }
 ```
 
 ---
 
 ### `GET /api/alerts/latest/` 🔓
-Mendapatkan peringatan aktif paling terbaru (dioptimasi dengan Redis cache, TTL 90 detik).
+
+Peringatan aktif paling baru. Memicu **lazy-fetch** BMKG (`gempadirasakan.json`) dengan cache 60 detik.
 
 **Response 200:**
 ```json
 {
   "status": "success",
   "data": {
-    "alert": { ... },
-    "is_cached": true,
-    "cached_at": "2026-10-31T02:30:45Z"
-  }
+    "alert": {
+      "id": "uuid",
+      "disaster_type": "earthquake",
+      "title": "Gempa M5.8, 24 km Barat Daya Kota Padang",
+      "severity": null,
+      "status": "active",
+      "magnitude": 5.8,
+      "depth_km": 10,
+      "felt_description": "III - IV Padang",
+      "affected_area": "24 km Barat Daya Kota Padang",
+      "latitude": -0.95,
+      "longitude": 100.35,
+      "source": { "name": "BMKG", "source_url": "https://data.bmkg.go.id" },
+      "published_at": "2026-10-31T02:30:00Z",
+      "source_updated_at": "2026-10-31T02:30:00Z"
+    }
+  },
+  "message": "Data dapat tertunda hingga 60 detik dari sumber."
 }
 ```
+
+`alert` = `null` bila tidak ada peringatan aktif dalam radius 300 km dari Padang.
+
+> `source_updated_at` adalah waktu data dari sumber, **bukan** waktu cache. Frontend wajib menampilkan waktu ini.
 
 ---
 
 ### `GET /api/alerts/{id}/` 🔓
-Detail satu peringatan beserta instruksi keselamatan.
 
-**Response 200:**
-```json
-{
-  "status": "success",
-  "data": {
-    "id": "uuid-...",
-    "disaster_type": "earthquake",
-    "title": "Gempa M5.8 Wilayah Padang",
-    "description": "Telah terjadi gempa bumi dengan kekuatan M5.8...",
-    "severity": "siaga",
-    "status": "active",
-    "affected_area": "24 km Barat Daya Kota Padang",
-    "source": {
-      "name": "BMKG",
-      "source_url": "https://data.bmkg.go.id/...",
-      "checked_at": "2026-10-31T02:29:00Z"
-    },
-    "source_reference_url": "https://bmkg.go.id/gempa/...",
-    "location": {
-      "latitude": -0.95,
-      "longitude": 100.35
-    },
-    "published_at": "2026-10-31T02:30:00Z",
-    "expires_at": null,
-    "updated_at": "2026-10-31T02:30:00Z"
-  }
-}
-```
+**Response 200:** detail lengkap + `description`, `source_reference_url`, `expires_at`, `updated_at`.
 
 ---
 
 ### `POST /api/officer/alerts/` 👮
-Membuat peringatan manual oleh petugas BPBD.
 
-**Request Body:**
 ```json
 {
   "disaster_type": "flood",
   "title": "Banjir di Kawasan Alai",
-  "description": "Telah terjadi banjir setinggi 50 cm di kawasan Alai...",
+  "description": "Banjir setinggi 50 cm di kawasan Alai sejak pukul 05.00.",
   "severity": "waspada",
   "affected_area": "Kelurahan Alai, Padang Utara",
-  "location": {
-    "latitude": -0.89,
-    "longitude": 100.36
-  },
+  "latitude": -0.89,
+  "longitude": 100.36,
   "source_reference_url": "https://bpbd-padang.go.id/...",
   "expires_at": "2026-10-31T12:00:00Z"
 }
 ```
 
+**Response 201:** objek alert + `"message": "Peringatan aktif. Notifikasi dikirim ke N perangkat."`
+
+FCM dikirim sinkron setelah alert tersimpan. Bila FCM gagal: alert tetap dibuat, response menyertakan `"fcm_error": "..."`.
+
 ---
 
 ### `PATCH /api/officer/alerts/{id}/` 👮
-Mengupdate status peringatan (misal: menandai peringatan sudah expired atau cancelled).
 
-**Request Body:**
 ```json
-{
-  "status": "expired"
-}
+{ "status": "expired" }
 ```
+
+Perubahan status **tidak** memicu notifikasi baru.
 
 ---
 
-## 3. Berita Kebencanaan (News)
+## 5. Berita (News)
 
 ### `GET /api/news/` 🔓
-Daftar berita kebencanaan yang dipublikasikan.
 
-**Query Parameters:**
-| Parameter | Tipe | Keterangan |
-|---|---|---|
-| `category` | string | Filter: `earthquake`, `tsunami`, `flood`, `landslide`, `general` |
-| `page` | integer | Nomor halaman |
-| `page_size` | integer | Default 10, maks 30 |
+| Parameter | Keterangan |
+|---|---|
+| `category` | `earthquake`, `tsunami`, `flood`, `landslide`, `general` |
+| `area` | Filter `area_tags` |
+| `page` / `page_size` | Default 10, maks 30 |
 
 **Response 200:**
 ```json
 {
   "status": "success",
-  "data": {
-    "count": 120,
-    "next": "/api/news/?page=2",
-    "previous": null,
-    "results": [
-      {
-        "id": "uuid-...",
-        "title": "BPBD Padang Imbau Warga Waspada Banjir",
-        "slug": "bpbd-padang-imbau-warga-waspada-banjir",
-        "summary": "Memasuki musim hujan, BPBD Kota Padang mengingatkan...",
-        "thumbnail_url": "https://...",
-        "category": "flood",
-        "author": {
-          "full_name": "Tim Redaksi SIGAP"
-        },
-        "source": {
-          "name": "BPBD Kota Padang"
-        },
-        "published_at": "2026-10-30T09:00:00Z"
-      }
-    ]
-  }
+  "count": 120,
+  "next": "/api/news/?page=2",
+  "previous": null,
+  "results": [
+    {
+      "id": "uuid",
+      "title": "BPBD Padang Imbau Warga Waspada Banjir",
+      "slug": "bpbd-padang-imbau-warga-waspada-banjir",
+      "summary": "Memasuki musim hujan, BPBD Kota Padang mengingatkan...",
+      "thumbnail_url": "https://...",
+      "category": "flood",
+      "area_tags": ["Padang Barat", "Alai"],
+      "author": { "full_name": "Tim Redaksi SIGAP" },
+      "source": { "name": "BPBD Kota Padang" },
+      "published_at": "2026-10-30T09:00:00Z"
+    }
+  ]
 }
 ```
 
 ---
 
 ### `GET /api/news/{id}/` 🔓
-Detail artikel berita lengkap.
+
+Detail lengkap termasuk `content`. Boleh juga diakses lewat slug: `GET /api/news/{slug}/`.
 
 ---
 
 ### `POST /api/editor/news/` ✏️
-Membuat artikel berita baru.
 
-**Request Body:**
 ```json
 {
   "title": "Judul Berita",
   "summary": "Ringkasan singkat",
-  "content": "Isi berita dalam format **Markdown**...",
+  "content": "Isi berita dalam **Markdown**...",
   "category": "flood",
   "area_tags": ["Padang Barat", "Alai"],
   "source_id": "uuid-source-bpbd",
@@ -486,28 +512,32 @@ Membuat artikel berita baru.
 }
 ```
 
+`slug` dibuat otomatis; bila bertabrakan → `judul-2`.
+
 ---
 
 ### `PATCH /api/editor/news/{id}/` ✏️
-Mengedit artikel berita.
 
-### `DELETE /api/editor/news/{id}/` ✏️
-Menghapus artikel berita.
+Semua field opsional. `author_id` **tetap** penerbit awal.
 
 ---
 
-## 4. Peta & Titik Bantuan (Map)
+### `DELETE /api/editor/news/{id}/` ✏️
+
+**Response 204** (soft delete tidak dipakai; data benar-benar dihapus dan dicatat di `audit_logs`).
+
+---
+
+## 6. Peta & Titik Bantuan
 
 ### `GET /api/map/nearby/` 🔓
-Titik bantuan terdekat dalam radius tertentu dari koordinat yang diberikan.
 
-**Query Parameters:**
-| Parameter | Tipe | Wajib | Keterangan |
-|---|---|---|---|
-| `lat` | float | ✅ | Latitude pengguna (contoh: `-0.9492`) |
-| `lon` | float | ✅ | Longitude pengguna (contoh: `100.3543`) |
-| `radius` | integer | ❌ | Radius dalam meter, default `5000`, maks `20000` |
-| `category` | string | ❌ | Filter: `evacuation_point`, `emergency_post`, `hospital`, `health_center` |
+| Parameter | Wajib | Keterangan |
+|---|---|---|
+| `lat` | ✅ | Latitude pengguna, contoh `-0.9492` |
+| `lon` | ✅ | Longitude pengguna, contoh `100.3543` |
+| `radius` | ❌ | Meter, default `5000`, maks `20000` |
+| `category` | ❌ | `evacuation_point`, `emergency_post`, `hospital`, `health_center`, `relief_point` |
 
 **Response 200:**
 ```json
@@ -518,7 +548,7 @@ Titik bantuan terdekat dalam radius tertentu dari koordinat yang diberikan.
     "radius_meters": 5000,
     "results": [
       {
-        "id": "uuid-...",
+        "id": "uuid",
         "name": "Lapangan Imam Bonjol",
         "category": "evacuation_point",
         "address": "Jl. Imam Bonjol, Padang",
@@ -536,59 +566,57 @@ Titik bantuan terdekat dalam radius tertentu dari koordinat yang diberikan.
 }
 ```
 
+`distance_meters` dibulatkan 1 desimal. Maksimum 50 hasil.
+
 ---
 
 ### `GET /api/map/risk-zones/` 🔓
-Layer zona risiko bencana Kota Padang dalam format GeoJSON.
 
-**Query Parameters:**
-| Parameter | Tipe | Keterangan |
-|---|---|---|
-| `hazard_type` | string | Filter: `earthquake`, `tsunami`, `flood`, `landslide` |
-| `risk_level` | string | Filter: `low`, `medium`, `high`, `very_high` |
+| Parameter | Keterangan |
+|---|---|
+| `hazard_type` | `earthquake`, `tsunami`, `flood`, `landslide` |
+| `risk_level` | `low`, `medium`, `high`, `very_high` |
 
 **Response 200:**
 ```json
 {
-  "type": "FeatureCollection",
-  "features": [
-    {
-      "type": "Feature",
-      "geometry": {
-        "type": "Polygon",
-        "coordinates": [[[100.32, -0.85], [100.35, -0.85], ...]]
-      },
-      "properties": {
-        "id": "uuid-...",
-        "name": "Zona Bahaya Tsunami Pesisir Bungus",
-        "hazard_type": "tsunami",
-        "risk_level": "very_high",
-        "description": "Kawasan pesisir dengan risiko tsunami sangat tinggi",
-        "source": "BPBD Kota Padang",
-        "updated_at": "2026-07-01T00:00:00Z"
+  "status": "success",
+  "data": {
+    "type": "FeatureCollection",
+    "features": [
+      {
+        "type": "Feature",
+        "geometry": { "type": "Polygon", "coordinates": [[[100.32, -0.85], [100.35, -0.85]]] },
+        "properties": {
+          "id": "uuid",
+          "name": "Zona Bahaya Tsunami Pesisir Bungus",
+          "hazard_type": "tsunami",
+          "risk_level": "very_high",
+          "description": "Kawasan pesisir dengan risiko tsunami sangat tinggi",
+          "source": "BPBD Kota Padang",
+          "updated_at": "2026-07-01T00:00:00Z"
+        }
       }
-    }
-  ]
+    ]
+  }
 }
 ```
 
 ---
 
 ### `GET /api/assistance-points/` 🔓
-Daftar semua titik bantuan terverifikasi (tanpa filter radius).
 
-**Query Parameters:**
-| Parameter | Tipe | Keterangan |
+| Parameter | Default | Keterangan |
 |---|---|---|
-| `category` | string | Filter berdasarkan kategori |
-| `verification_status` | string | `verified`, `unverified` (default: `verified`) |
+| `category` | – | Filter kategori |
+| `verification_status` | `verified` | `verified`, `unverified`, `outdated`, `all` |
+
+**Response 200:** paginated (maks 50/page), item sama seperti `nearby` tanpa `distance_meters`.
 
 ---
 
 ### `POST /api/officer/assistance-points/` 👮
-Menambahkan titik bantuan baru.
 
-**Request Body:**
 ```json
 {
   "name": "Posko Banjir RW 03 Alai",
@@ -603,23 +631,45 @@ Menambahkan titik bantuan baru.
 }
 ```
 
+Validasi: `latitude` ∈ [-90, 90], `longitude` ∈ [-180, 180].
+
 ---
 
 ### `PATCH /api/officer/assistance-points/{id}/` 👮
-Memperbarui data titik bantuan.
+
+Termasuk `verification_status` dan `verified_at` (diisi otomatis saat diubah ke `verified`).
 
 ---
 
-## 5. Keluarga & Status Keselamatan (Family)
+### `POST /api/officer/risk-zones/` 👮
 
-### `POST /api/family/groups/` 🔒
-Membuat grup keluarga baru.
-
-**Request Body:**
 ```json
 {
-  "name": "Keluarga Pak Ahmad"
+  "name": "Zona Bahaya Tsunami Bungus",
+  "hazard_type": "tsunami",
+  "risk_level": "very_high",
+  "geojson": { "type": "Polygon", "coordinates": [[[100.32, -0.85]]] },
+  "description": "...",
+  "source_notes": "BPBD Kota Padang, 2026"
 }
+```
+
+`geojson.type` wajib `Polygon` atau `MultiPolygon`.
+
+---
+
+### `PATCH /api/officer/risk-zones/{id}/` 👮
+
+Semua field opsional. `geojson` divalidasi dengan aturan yang sama.
+
+---
+
+## 7. Keluarga & Status Keselamatan
+
+### `POST /api/family/groups/` 🔒
+
+```json
+{ "name": "Keluarga Pak Ahmad" }
 ```
 
 **Response 201:**
@@ -627,67 +677,34 @@ Membuat grup keluarga baru.
 {
   "status": "success",
   "data": {
-    "id": "uuid-...",
+    "id": "uuid",
     "name": "Keluarga Pak Ahmad",
-    "invite_code": "SIGAP8K",
+    "invite_code": "SIGAP8KM",
     "invite_code_expires_at": "2026-11-01T10:00:00Z",
+    "is_group_admin": true,
     "created_at": "2026-10-31T10:00:00Z"
   }
 }
 ```
 
----
-
-### `POST /api/family/join/` 🔒
-Bergabung ke grup keluarga menggunakan kode undangan.
-
-**Request Body:**
-```json
-{
-  "invite_code": "SIGAP8K"
-}
-```
-
-**Response 200:**
-```json
-{
-  "status": "success",
-  "data": {
-    "family_group": {
-      "id": "uuid-...",
-      "name": "Keluarga Pak Ahmad"
-    },
-    "role": "member",
-    "joined_at": "2026-10-31T10:05:00Z"
-  }
-}
-```
-
-**Error jika kode expired atau tidak valid:**
-```json
-{
-  "status": "error",
-  "code": "INVALID_INVITE_CODE",
-  "message": "Kode undangan tidak valid atau sudah kadaluarsa."
-}
-```
+Pembuat otomatis menjadi anggota `active` + admin grup.
 
 ---
 
 ### `GET /api/family/my-groups/` 🔒
-Mendapatkan daftar semua grup keluarga yang diikuti.
 
-**Response 200:**
 ```json
 {
   "status": "success",
   "data": [
     {
-      "id": "uuid-...",
+      "id": "uuid",
       "name": "Keluarga Pak Ahmad",
-      "role": "admin",
+      "is_group_admin": true,
+      "status": "active",
       "member_count": 5,
-      "latest_alert_count": 1
+      "pending_count": 1,
+      "need_help_count": 1
     }
   ]
 }
@@ -695,25 +712,47 @@ Mendapatkan daftar semua grup keluarga yang diikuti.
 
 ---
 
-### `GET /api/family/groups/{group_id}/members/` 🔒
-Status keselamatan terbaru seluruh anggota di satu grup. 
+### `POST /api/family/join/` 🔒
 
-> Hanya bisa diakses oleh anggota grup tersebut.
+```json
+{ "invite_code": "SIGAP8KM" }
+```
+
+**Response 200 (menunggu persetujuan):**
+```json
+{
+  "status": "success",
+  "data": {
+    "family_group": { "id": "uuid", "name": "Keluarga Pak Ahmad" },
+    "status": "pending",
+    "requested_at": "2026-10-31T10:05:00Z"
+  },
+  "message": "Permintaan bergabung dikirim. Menunggu persetujuan admin grup."
+}
+```
+
+**Error:**
+```json
+{ "status": "error", "code": "INVALID_INVITE_CODE", "message": "Kode undangan tidak valid atau sudah kedaluwarsa." }
+```
+
+Sudah menjadi anggota aktif → `409 ALREADY_MEMBER`.
+
+---
+
+### `GET /api/family/groups/{group_id}/members/` 👪
 
 **Response 200:**
 ```json
 {
   "status": "success",
   "data": {
-    "group": {
-      "id": "uuid-...",
-      "name": "Keluarga Pak Ahmad"
-    },
+    "group": { "id": "uuid", "name": "Keluarga Pak Ahmad" },
     "members": [
       {
-        "user_id": "uuid-...",
+        "user_id": "uuid",
         "full_name": "Budi Santoso",
-        "role": "admin",
+        "is_group_admin": true,
         "latest_status": {
           "status": "safe",
           "message": "Di rumah, kondisi baik",
@@ -723,9 +762,9 @@ Status keselamatan terbaru seluruh anggota di satu grup.
         }
       },
       {
-        "user_id": "uuid-...",
+        "user_id": "uuid",
         "full_name": "Siti Aminah",
-        "role": "member",
+        "is_group_admin": false,
         "latest_status": null
       }
     ]
@@ -733,14 +772,59 @@ Status keselamatan terbaru seluruh anggota di satu grup.
 }
 ```
 
-> **Catatan:** Anggota dengan `latest_status: null` ditampilkan sebagai "Belum ada konfirmasi" di UI, **bukan** "Tidak aman".
+Hanya anggota `status='active'`. `latest_status: null` → UI "Belum ada konfirmasi", **bukan** "tidak aman".
 
 ---
 
-### `POST /api/family/groups/{group_id}/status/` 🔒
-Mengirimkan status keselamatan terbaru.
+### `GET /api/family/groups/{group_id}/pending/` 👪
 
-**Request Body:**
+Khusus admin grup. Daftar permintaan bergabung.
+
+```json
+{
+  "status": "success",
+  "data": [
+    { "user_id": "uuid", "full_name": "Rina", "email": "rina@gmail.com", "requested_at": "2026-10-31T10:05:00Z" }
+  ]
+}
+```
+
+---
+
+### `POST /api/family/groups/{group_id}/members/{user_id}/approve/` 👪
+
+Khusus admin grup. `status` → `active`, `joined_at` diisi, FCM dikirim ke user.
+
+**Response 200:** `{ "status": "success", "message": "Anggota disetujui." }`
+
+---
+
+### `POST /api/family/groups/{group_id}/members/{user_id}/reject/` 👪
+
+Khusus admin grup. `status` → `rejected`. User dapat mengirim permintaan baru kapan saja.
+
+---
+
+### `DELETE /api/family/groups/{group_id}/members/{user_id}/` 👪
+
+Khusus admin grup. Mengeluarkan anggota aktif.
+
+**Response 409** bila mencoba mengeluarkan admin terakhir: `LAST_ADMIN_CANNOT_BE_REMOVED`.
+
+---
+
+### `POST /api/family/groups/{group_id}/transfer-admin/` 👪
+
+```json
+{ "user_id": "uuid" }
+```
+
+Khusus admin grup. Admin lama tetap anggota biasa.
+
+---
+
+### `POST /api/family/groups/{group_id}/status/` 👪
+
 ```json
 {
   "status": "safe",
@@ -753,38 +837,60 @@ Mengirimkan status keselamatan terbaru.
 }
 ```
 
-> **Aturan Privasi:** `latitude` dan `longitude` **hanya disimpan** jika `share_location: true`. Jika `false`, koordinat langsung diabaikan oleh backend meskipun dikirimkan.
+**Aturan privasi:** `latitude`/`longitude` **hanya disimpan** bila `share_location: true`. Jika `false`, koordinat diabaikan meski dikirim.
 
-**Response 200:**
+**Response 201:**
 ```json
 {
   "status": "success",
   "data": {
-    "id": "uuid-...",
+    "id": "uuid",
     "status": "safe",
     "message": "Saya aman di rumah, tidak ada kerusakan.",
+    "location_shared": true,
     "created_at": "2026-10-31T10:15:00Z"
   },
-  "message": "Status keselamatan berhasil dikirim."
+  "message": "Status keselamatan terkirim."
 }
+```
+
+FCM data+notification dikirim ke seluruh anggota `active` lain yang mengaktifkan `family_enabled`.
+
+---
+
+### `POST /api/family/groups/{group_id}/regenerate-invite/` 👪
+
+Khusus admin grup. Ditolak (`429`) bila kode sebelumnya masih berlaku > 12 jam.
+
+**Response 200:**
+```json
+{ "status": "success", "data": { "invite_code": "K7M2ZQ9A", "invite_code_expires_at": "2026-11-02T10:00:00Z" } }
 ```
 
 ---
 
-### `POST /api/family/groups/{group_id}/regenerate-invite/` 🔒
-Membuat ulang kode undangan (hanya bisa dilakukan oleh admin grup).
+### `DELETE /api/family/groups/{group_id}/leave/` 👪
+
+**Response 409** bila admin terakhir: `LAST_ADMIN_CANNOT_LEAVE`.
 
 ---
 
-### `DELETE /api/family/groups/{group_id}/leave/` 🔒
-Keluar dari grup keluarga.
+### `DELETE /api/family/groups/{group_id}/` 👪
+
+Hapus grup (khusus admin grup). Menghapus semua `family_memberships` dan `safety_statuses` grup tersebut.
+
+**Response 204.**
 
 ---
 
-## 6. Kontak Darurat & Panduan
+## 8. Kontak Darurat & Panduan
 
 ### `GET /api/emergency-contacts/` 🔓
-Daftar kontak darurat resmi Kota Padang.
+
+| Parameter | Keterangan |
+|---|---|
+| `category` | `police`, `bpbd`, `sar`, `hospital`, `fire`, `ambulance`, `other` |
+| `verified_only` | default `true` |
 
 **Response 200:**
 ```json
@@ -792,19 +898,14 @@ Daftar kontak darurat resmi Kota Padang.
   "status": "success",
   "data": [
     {
-      "id": "uuid-...",
+      "id": "uuid",
       "name": "BPBD Kota Padang",
       "category": "bpbd",
       "phone_number": "0751-892929",
       "description": "Badan Penanggulangan Bencana Daerah Kota Padang",
+      "area": "Kota Padang",
       "is_verified": true,
       "verified_at": "2026-09-01T00:00:00Z"
-    },
-    {
-      "name": "Basarnas Pos SAR Padang",
-      "category": "sar",
-      "phone_number": "0751-55555",
-      ...
     }
   ]
 }
@@ -813,13 +914,11 @@ Daftar kontak darurat resmi Kota Padang.
 ---
 
 ### `GET /api/guides/` 🔓
-Daftar panduan kesiapsiagaan.
 
-**Query Parameters:**
 | Parameter | Keterangan |
 |---|---|
-| `disaster_type` | Filter: `earthquake`, `tsunami`, `flood`, `landslide` |
-| `phase` | Filter: `before`, `during`, `after` |
+| `disaster_type` | `earthquake`, `tsunami`, `flood`, `landslide`, `general` |
+| `phase` | `before`, `during`, `after` |
 
 **Response 200:**
 ```json
@@ -827,11 +926,11 @@ Daftar panduan kesiapsiagaan.
   "status": "success",
   "data": [
     {
-      "id": "uuid-...",
+      "id": "uuid",
       "disaster_type": "earthquake",
       "phase": "during",
       "title": "Langkah Saat Gempa Berlangsung",
-      "content": "1. Jangan panik...\n2. Segera berlindung di bawah meja...",
+      "content": "1. Jangan panik...\n2. Berlindung di bawah meja...",
       "icon_name": "earthquake_during",
       "reviewed_source": "BMKG & BPBD",
       "reviewed_at": "2026-01-01",
@@ -843,31 +942,30 @@ Daftar panduan kesiapsiagaan.
 
 ---
 
-## 7. Laporan Warga (P1 — Post MVP)
+## 9. Laporan Warga (P1 — Fase 4)
 
 ### `POST /api/reports/` 🔒
-Mengirimkan laporan kejadian bencana.
 
-**Request Body (multipart/form-data):**
-| Field | Tipe | Wajib | Keterangan |
-|---|---|---|---|
-| `category` | string | ✅ | `earthquake`, `flood`, dll. |
-| `description` | string | ✅ | Deskripsi kejadian |
-| `incident_time` | datetime | ❌ | Waktu kejadian |
-| `location_note` | string | ❌ | Keterangan lokasi teks |
-| `share_location` | boolean | ❌ | Izin bagikan koordinat |
-| `latitude` | float | ❌ | Diproses hanya jika `share_location: true` |
-| `longitude` | float | ❌ | Diproses hanya jika `share_location: true` |
-| `photo` | file | ❌ | Foto kejadian (JPEG/PNG, maks 10 MB) |
+`multipart/form-data`:
+
+| Field | Wajib | Keterangan |
+|---|---|---|
+| `category` | ✅ | `earthquake`, `flood`, `landslide`, `tsunami`, `other` |
+| `description` | ✅ | Maks 2000 karakter |
+| `incident_time` | ❌ | ISO datetime |
+| `location_note` | ❌ | Teks |
+| `share_location` | ❌ | Default `false` |
+| `latitude` / `longitude` | ❌ | Diabaikan bila `share_location=false` |
+| `photo` | ❌ | JPEG/PNG, maks 10 MB |
 
 **Response 201:**
 ```json
 {
   "status": "success",
   "data": {
-    "id": "uuid-...",
+    "id": "uuid",
     "moderation_status": "pending",
-    "message_to_user": "Laporan Anda telah diterima dan sedang dalam proses peninjauan oleh tim SIGAP."
+    "message_to_user": "Laporan diterima dan sedang ditinjau."
   }
 }
 ```
@@ -875,76 +973,101 @@ Mengirimkan laporan kejadian bencana.
 ---
 
 ### `GET /api/reports/my-reports/` 🔒
-Melihat riwayat laporan yang pernah dikirim oleh pengguna.
+
+Paginated. Setiap item menyertakan `moderation_status` dan `review_notes`.
 
 ---
 
-## 8. Endpoint Admin (Django Admin Panel)
+## 10. Django Admin
 
-> Seluruh endpoint admin dikelola langsung via **Django Admin** di URL:  
-> `https://sigap-backend.onrender.com/admin/`
->
-> Fitur yang tersedia di Django Admin:
-> - Manajemen user dan role (CRUD akun, set role `officer`/`editor`)
-> - CRUD sumber data (`sources`)
-> - Buat/edit/hapus peringatan manual (`alerts`)
-> - Publish/edit/hapus berita (`news_articles`)
-> - Kelola titik bantuan dan zona risiko (`assistance_points`, `risk_zones`)
-> - Kelola kontak darurat (`emergency_contacts`)
-> - Kelola panduan kesiapsiagaan (`guides`)
-> - Moderasi laporan warga (`incident_reports`)
-> - Lihat audit log (`audit_logs`)
+URL: `https://sigap-backend.onrender.com/admin/`
 
----
+| Model | Aksi |
+|---|---|
+| User & Profil | CRUD akun, ubah `role`, aktif/nonaktif |
+| Sources | CRUD |
+| Alerts | CRUD, ubah status |
+| News | CRUD, publish/unpublish |
+| Assistance Points | CRUD, ubah `verification_status` |
+| Risk Zones | CRUD (input GeoJSON) |
+| Emergency Contacts | CRUD, verifikasi |
+| Guides | CRUD |
+| Incident Reports (P1) | Moderasi |
+| Audit Logs | Read-only |
 
-## 9. Endpoint Internal (Background Worker)
-
-Endpoint ini **tidak dipanggil oleh Flutter**, hanya digunakan oleh cron job internal backend:
-
-### `POST /api/internal/sync-bmkg/` 
-Dipanggil oleh Celery / django-crontab setiap 2 menit untuk mengambil data terbaru dari BMKG dan menyimpannya ke tabel `alerts`. Request harus membawa header secret internal (`X-Internal-Token`).
+Admin hanya untuk `is_staff=True`. Semua aksi tercatat di `audit_logs`.
 
 ---
 
-## 10. Ringkasan Semua Endpoint
+## 11. Endpoint Internal
+
+### `POST /api/internal/sync-bmkg/`
+
+Opsional. Dipanggil penjadwal eksternal gratis (GitHub Actions `*/10 * * * *`) untuk menyimpan riwayat gempa. **Tidak wajib** — endpoint publik sudah melakukan lazy-fetch.
+
+Header wajib: `X-Internal-Token: $INTERNAL_SYNC_TOKEN`
+
+**Response 200:**
+```json
+{ "status": "success", "data": { "fetched": 15, "created": 2, "skipped": 13 } }
+```
+
+---
+
+## 12. Ringkasan Endpoint
 
 | Method | Endpoint | Auth | Keterangan |
 |---|---|---|---|
-| POST | `/api/auth/register/` | 🔓 | Registrasi akun baru |
-| POST | `/api/auth/login/` | 🔓 | Login & dapatkan token |
-| POST | `/api/auth/token/refresh/` | 🔓 | Refresh access token |
-| POST | `/api/auth/logout/` | 🔒 | Logout & blacklist token |
-| POST | `/api/auth/password/reset/` | 🔓 | Request reset password |
-| GET | `/api/me/` | 🔒 | Lihat profil sendiri |
+| POST | `/api/auth/register/` | 🔓 | Registrasi |
+| POST | `/api/auth/login/` | 🔓 | Login |
+| POST | `/api/auth/token/refresh/` | 🔓 | Refresh (rotasi) |
+| POST | `/api/auth/logout/` | 🔒 | Blacklist refresh |
+| POST | `/api/auth/password/reset/` | 🔓 | Minta tautan reset |
+| POST | `/api/auth/password/reset/confirm/` | 🔓 | **Baru** — set password baru |
+| POST | `/api/auth/password/change/` | 🔒 | **Baru** — ganti password |
+| GET | `/api/me/` | 🔒 | Profil |
 | PATCH | `/api/me/` | 🔒 | Update profil |
-| POST | `/api/me/upload-photo/` | 🔒 | Upload foto profil |
-| GET | `/api/me/preferences/` | 🔒 | Lihat preferensi notifikasi |
-| PATCH | `/api/me/preferences/` | 🔒 | Update preferensi notifikasi |
+| DELETE | `/api/me/` | 🔒 | **Baru** — hapus akun |
+| POST | `/api/me/upload-photo/` | 🔒 | Upload foto |
+| GET | `/api/me/preferences/` | 🔒 | Preferensi notifikasi |
+| PATCH | `/api/me/preferences/` | 🔒 | Update preferensi |
 | POST | `/api/me/device-token/` | 🔒 | Daftar FCM token |
-| GET | `/api/alerts/` | 🔓 | Daftar semua peringatan |
-| GET | `/api/alerts/latest/` | 🔓 | Peringatan aktif terbaru (cached) |
-| GET | `/api/alerts/{id}/` | 🔓 | Detail peringatan |
-| POST | `/api/officer/alerts/` | 👮 | Buat peringatan manual |
-| PATCH | `/api/officer/alerts/{id}/` | 👮 | Update status peringatan |
+| DELETE | `/api/me/device-token/` | 🔒 | **Baru** — hapus FCM token |
+| GET | `/api/dashboard/` | 🔓 | **Baru** — agregat dashboard |
+| GET | `/api/alerts/` | 🔓 | Daftar + filter |
+| GET | `/api/alerts/latest/` | 🔓 | Alert aktif (lazy-fetch BMKG) |
+| GET | `/api/alerts/{id}/` | 🔓 | Detail |
+| POST | `/api/officer/alerts/` | 👮 | Buat alert manual |
+| PATCH | `/api/officer/alerts/{id}/` | 👮 | Ubah status |
 | GET | `/api/news/` | 🔓 | Daftar berita |
-| GET | `/api/news/{id}/` | 🔓 | Detail berita |
-| POST | `/api/editor/news/` | ✏️ | Buat berita baru |
+| GET | `/api/news/{id}/` | 🔓 | Detail (id atau slug) |
+| POST | `/api/editor/news/` | ✏️ | Buat berita |
 | PATCH | `/api/editor/news/{id}/` | ✏️ | Edit berita |
 | DELETE | `/api/editor/news/{id}/` | ✏️ | Hapus berita |
-| GET | `/api/map/nearby/` | 🔓 | Titik bantuan terdekat (radius GIS) |
-| GET | `/api/map/risk-zones/` | 🔓 | Layer zona risiko (GeoJSON) |
+| GET | `/api/map/nearby/` | 🔓 | Radius (haversine) |
+| GET | `/api/map/risk-zones/` | 🔓 | GeoJSON layer |
 | GET | `/api/assistance-points/` | 🔓 | Semua titik bantuan |
-| POST | `/api/officer/assistance-points/` | 👮 | Tambah titik bantuan |
-| PATCH | `/api/officer/assistance-points/{id}/` | 👮 | Update titik bantuan |
-| POST | `/api/family/groups/` | 🔒 | Buat grup keluarga |
-| GET | `/api/family/my-groups/` | 🔒 | Grup keluarga yang diikuti |
-| POST | `/api/family/join/` | 🔒 | Bergabung via kode invite |
-| GET | `/api/family/groups/{id}/members/` | 🔒 | Status anggota grup |
-| POST | `/api/family/groups/{id}/status/` | 🔒 | Kirim status keselamatan |
-| POST | `/api/family/groups/{id}/regenerate-invite/` | 🔒 | Buat ulang kode invite |
-| DELETE | `/api/family/groups/{id}/leave/` | 🔒 | Keluar dari grup |
-| GET | `/api/emergency-contacts/` | 🔓 | Daftar kontak darurat |
-| GET | `/api/guides/` | 🔓 | Panduan kesiapsiagaan |
-| POST | `/api/reports/` | 🔒 | Kirim laporan warga (P1) |
-| GET | `/api/reports/my-reports/` | 🔒 | Riwayat laporan saya (P1) |
+| POST | `/api/officer/assistance-points/` | 👮 | Tambah titik |
+| PATCH | `/api/officer/assistance-points/{id}/` | 👮 | Update titik |
+| POST | `/api/officer/risk-zones/` | 👮 | **Baru** — tambah zona |
+| PATCH | `/api/officer/risk-zones/{id}/` | 👮 | **Baru** — update zona |
+| POST | `/api/family/groups/` | 🔒 | Buat grup |
+| GET | `/api/family/my-groups/` | 🔒 | Grup yang diikuti |
+| POST | `/api/family/join/` | 🔒 | Ajukan bergabung |
+| GET | `/api/family/groups/{id}/members/` | 👪 | Status anggota |
+| GET | `/api/family/groups/{id}/pending/` | 👪 | **Baru** — permintaan bergabung |
+| POST | `/api/family/groups/{id}/members/{uid}/approve/` | 👪 | **Baru** — setujui |
+| POST | `/api/family/groups/{id}/members/{uid}/reject/` | 👪 | **Baru** — tolak |
+| DELETE | `/api/family/groups/{id}/members/{uid}/` | 👪 | **Baru** — keluarkan |
+| POST | `/api/family/groups/{id}/transfer-admin/` | 👪 | **Baru** — pindah admin |
+| POST | `/api/family/groups/{id}/status/` | 👪 | Kirim status |
+| POST | `/api/family/groups/{id}/regenerate-invite/` | 👪 | Buat ulang kode |
+| DELETE | `/api/family/groups/{id}/leave/` | 👪 | Keluar grup |
+| DELETE | `/api/family/groups/{id}/` | 👪 | **Baru** — hapus grup |
+| GET | `/api/emergency-contacts/` | 🔓 | Kontak darurat |
+| GET | `/api/guides/` | 🔓 | Panduan |
+| POST | `/api/reports/` | 🔒 | Laporan warga (P1) |
+| GET | `/api/reports/my-reports/` | 🔒 | Riwayat laporan (P1) |
+| POST | `/api/internal/sync-bmkg/` | token | Opsional, penjadwal eksternal |
 
+**Total:** 51 endpoint. **Baru dari versi 1.0:** 13 endpoint (ditandai **Baru**).
