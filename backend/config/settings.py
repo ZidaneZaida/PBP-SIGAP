@@ -218,11 +218,10 @@ STORAGES = {
 # CORS & proxy
 # --------------------------------------------------------------------------
 CORS_ALLOWED_ORIGINS = env.list("CORS_ALLOWED_ORIGINS", default=[])
-CORS_ALLOW_ALL_ORIGINS = False
-if DEBUG:
-    CORS_ALLOWED_ORIGIN_REGEXES = [
-        r"^http://(localhost|127\.0\.0\.1)(:\d+)?$",
-    ]
+CORS_ALLOW_ALL_ORIGINS = env.bool("CORS_ALLOW_ALL_ORIGINS", default=False)
+CORS_ALLOWED_ORIGIN_REGEXES = [
+    r"^https?://(localhost|127\.0\.0\.1)(:\d+)?$",
+]
 
 # Render berjalan di belakang proxy; tanpa ini rate limit per-IP salah hitung.
 NUM_PROXIES = env.int("NUM_PROXIES", default=1)
