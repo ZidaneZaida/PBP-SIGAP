@@ -20,3 +20,5 @@ db.sqlite3
 
 # Log
 *.log
+backend/server-django
+.vscode
