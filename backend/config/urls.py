@@ -10,15 +10,6 @@ def root_view(request):
         {
             "status": "success",
             "message": "SIGAP Backend API is running.",
-            "data": {
-                "version": "0.1.0",
-                "docs": "https://github.com/ZidaneZaida/PBP-SIGAP",
-                "endpoints": {
-                    "health": "/api/health/",
-                    "dashboard": "/api/dashboard/",
-                    "admin": "/admin/",
-                },
-            },
         }
     )
 
