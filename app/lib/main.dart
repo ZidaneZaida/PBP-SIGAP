@@ -1,14 +1,29 @@
 import 'package:flutter/material.dart';
+import 'core/network/token_manager.dart';
 import 'core/theme/app_colors.dart';
 import 'features/splash/presentation/screens/splash_screen.dart';
 
-void main() {
+void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  runApp(const SigapApp());
+  final isLoggedIn = await TokenManager.isLoggedIn();
+  final user = await TokenManager.getUserData();
+  final userName = user?['full_name'] as String? ?? 'Warga Padang';
+
+  runApp(SigapApp(
+    isUserLoggedIn: isLoggedIn,
+    userName: userName,
+  ));
 }
 
 class SigapApp extends StatelessWidget {
-  const SigapApp({super.key});
+  final bool isUserLoggedIn;
+  final String userName;
+
+  const SigapApp({
+    super.key,
+    this.isUserLoggedIn = false,
+    this.userName = 'Warga Padang',
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -26,7 +41,10 @@ class SigapApp extends StatelessWidget {
           brightness: Brightness.light,
         ),
       ),
-      home: const SplashScreen(),
+      home: SplashScreen(
+        isUserLoggedIn: isUserLoggedIn,
+        userName: userName,
+      ),
     );
   }
 }

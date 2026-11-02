@@ -90,6 +90,11 @@ DATABASES = {
     )
 }
 
+if DATABASES["default"]["ENGINE"] == "django.db.backends.sqlite3":
+    _db_name = DATABASES["default"].get("NAME")
+    if _db_name and not Path(_db_name).is_absolute():
+        DATABASES["default"]["NAME"] = str(BASE_DIR / _db_name)
+
 TEST_DB_NAME = env("TEST_DB_NAME", default="")
 if TEST_DB_NAME:
     DATABASES["default"]["TEST"] = {"NAME": TEST_DB_NAME}
@@ -200,6 +205,10 @@ STORAGES = {
 # --------------------------------------------------------------------------
 CORS_ALLOWED_ORIGINS = env.list("CORS_ALLOWED_ORIGINS", default=[])
 CORS_ALLOW_ALL_ORIGINS = False
+if DEBUG:
+    CORS_ALLOWED_ORIGIN_REGEXES = [
+        r"^http://(localhost|127\.0\.0\.1)(:\d+)?$",
+    ]
 
 # Render berjalan di belakang proxy; tanpa ini rate limit per-IP salah hitung.
 NUM_PROXIES = env.int("NUM_PROXIES", default=1)

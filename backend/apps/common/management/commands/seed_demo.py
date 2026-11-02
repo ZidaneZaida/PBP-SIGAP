@@ -9,9 +9,27 @@ from datetime import date
 from django.core.management.base import BaseCommand
 from django.utils import timezone
 
+from apps.accounts.models import User
 from apps.alerts.models import Source
 from apps.guides.models import EmergencyContact, Guide
 from apps.map.models import AssistancePoint
+
+DEMO_USERS = [
+    {
+        "email": "warga@sigap.id",
+        "password": "Password123!",
+        "full_name": "Ahmad Warga",
+        "role": User.Role.CITIZEN,
+        "is_staff": False,
+    },
+    {
+        "email": "petugas@sigap.id",
+        "password": "Password123!",
+        "full_name": "Rian Petugas BPBD",
+        "role": User.Role.OFFICER,
+        "is_staff": True,
+    },
+]
 
 SOURCES = [
     {
@@ -127,6 +145,24 @@ class Command(BaseCommand):
             )
             guides += int(created)
         self.stdout.write(self.style.SUCCESS(f"Panduan: +{guides}"))
+
+        users_count = 0
+        for u_data in DEMO_USERS:
+            user = User.objects.filter(email=u_data["email"]).first()
+            if not user:
+                User.objects.create_user(
+                    email=u_data["email"],
+                    password=u_data["password"],
+                    full_name=u_data["full_name"],
+                    role=u_data["role"],
+                    is_staff=u_data["is_staff"],
+                )
+                users_count += 1
+        self.stdout.write(
+            self.style.SUCCESS(
+                f"User demo: +{users_count} (warga@sigap.id & petugas@sigap.id / Password123!)"
+            )
+        )
         self.stdout.write(
             self.style.WARNING(
                 "Seed selesai. Data posko/kontak berstatus belum terverifikasi "
