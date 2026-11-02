@@ -18,6 +18,8 @@ ALLOWED_HOSTS = env.list(
     "ALLOWED_HOSTS",
     default=["localhost", "127.0.0.1", ".onrender.com", ".vercel.app"],
 )
+if ".vercel.app" not in ALLOWED_HOSTS:
+    ALLOWED_HOSTS.append(".vercel.app")
 
 # --------------------------------------------------------------------------
 # Applications
