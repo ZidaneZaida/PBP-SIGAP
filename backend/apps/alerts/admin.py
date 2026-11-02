@@ -24,3 +24,4 @@ class AlertAdmin(admin.ModelAdmin):
     search_fields = ("title", "affected_area")
     date_hierarchy = "published_at"
     readonly_fields = ("bmkg_datetime", "created_at", "updated_at")
+

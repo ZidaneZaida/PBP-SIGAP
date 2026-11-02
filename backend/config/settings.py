@@ -14,7 +14,9 @@ environ.Env.read_env(BASE_DIR / ".env")
 
 SECRET_KEY = env("SECRET_KEY", default="dev-insecure-key")
 DEBUG = env.bool("DEBUG", default=False)
-ALLOWED_HOSTS = env.list("ALLOWED_HOSTS", default=["localhost", "127.0.0.1"])
+ALLOWED_HOSTS = env.list(
+    "ALLOWED_HOSTS", default=["localhost", "127.0.0.1", ".onrender.com"]
+)
 
 # --------------------------------------------------------------------------
 # Applications
@@ -90,6 +92,11 @@ DATABASES = {
     )
 }
 
+if DATABASES["default"]["ENGINE"] == "django.db.backends.sqlite3":
+    _db_name = DATABASES["default"].get("NAME")
+    if _db_name and not Path(_db_name).is_absolute():
+        DATABASES["default"]["NAME"] = str(BASE_DIR / _db_name)
+
 TEST_DB_NAME = env("TEST_DB_NAME", default="")
 if TEST_DB_NAME:
     DATABASES["default"]["TEST"] = {"NAME": TEST_DB_NAME}
@@ -106,6 +113,15 @@ if "test" in sys.argv:
 
 DATABASES["default"]["CONN_MAX_AGE"] = env.int("CONN_MAX_AGE", default=0)
 DATABASES["default"]["DISABLE_SERVER_SIDE_CURSORS"] = True
+DATABASES["default"]["CONN_HEALTH_CHECKS"] = env.bool(
+    "CONN_HEALTH_CHECKS", default=True
+)
+
+# Konfigurasi koneksi PostgreSQL (Neon / Supabase)
+if DATABASES["default"]["ENGINE"] == "django.db.backends.postgresql":
+    DATABASES["default"].setdefault("OPTIONS", {}).update({
+        "connect_timeout": 10,
+    })
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
@@ -142,9 +158,10 @@ REST_FRAMEWORK = {
     "PAGE_SIZE": 10,
     "EXCEPTION_HANDLER": "apps.common.exceptions.api_exception_handler",
     "DEFAULT_THROTTLE_CLASSES": ["rest_framework.throttling.AnonRateThrottle"],
+    # Jendela bebas (mis. 5/10min) ditangani apps.common.throttling.
     "DEFAULT_THROTTLE_RATES": {
         "anon": "120/min",
-        "login": "10/10min",
+        "login": "5/10min",
         "register": "20/hour",
         "password_reset": "5/hour",
     },
@@ -199,6 +216,10 @@ STORAGES = {
 # --------------------------------------------------------------------------
 CORS_ALLOWED_ORIGINS = env.list("CORS_ALLOWED_ORIGINS", default=[])
 CORS_ALLOW_ALL_ORIGINS = False
+if DEBUG:
+    CORS_ALLOWED_ORIGIN_REGEXES = [
+        r"^http://(localhost|127\.0\.0\.1)(:\d+)?$",
+    ]
 
 # Render berjalan di belakang proxy; tanpa ini rate limit per-IP salah hitung.
 NUM_PROXIES = env.int("NUM_PROXIES", default=1)

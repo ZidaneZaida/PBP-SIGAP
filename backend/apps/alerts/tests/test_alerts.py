@@ -88,10 +88,10 @@ class AlertPermissionTest(TestCase):
     def setUp(self):
         self.client = APIClient()
         self.citizen = User.objects.create_user(
-            email="warga@example.com", password="Password123"
+            email="warga@example.com", password="SandiSigap2026"
         )
         self.officer = User.objects.create_user(
-            email="petugas@example.com", password="Password123", role="officer"
+            email="petugas@example.com", password="SandiSigap2026", role="officer"
         )
         self.payload = {
             "disaster_type": "flood",

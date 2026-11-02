@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import '../../../../core/network/api_client.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/widgets/social_icons.dart';
 import '../../../dashboard/presentation/screens/dashboard_screen.dart';
+import '../../data/auth_service.dart';
 import 'register_screen.dart';
 
 /// Screen Login SIGAP (Siaga Bencana Kota Padang)
@@ -44,46 +46,85 @@ class _LoginScreenState extends State<LoginScreen> {
       return;
     }
 
+    final email = _identifierController.text.trim();
+    final password = _passwordController.text;
+
     setState(() => _isLoading = true);
-    await Future.delayed(const Duration(milliseconds: 900));
 
-    if (!mounted) return;
-    setState(() => _isLoading = false);
+    try {
+      final user = await AuthService().login(
+        email: email,
+        password: password,
+      );
 
-    final input = _identifierController.text.trim();
-    String displayName = 'Warga Padang';
-    if (input.contains('@')) {
-      displayName = input.split('@').first;
-    } else if (input.isNotEmpty) {
-      displayName = input;
-    }
+      if (!mounted) return;
+      setState(() => _isLoading = false);
 
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Row(
-          children: [
-            const Icon(Icons.check_circle_rounded, color: Colors.white, size: 20),
-            const SizedBox(width: 10),
-            Expanded(
-              child: Text(
-                'Berhasil masuk! Selamat datang, $displayName.',
-                style: GoogleFonts.plusJakartaSans(fontSize: 13),
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Row(
+            children: [
+              const Icon(Icons.check_circle_rounded, color: Colors.white, size: 20),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  'Berhasil masuk! Selamat datang, ${user.fullName}.',
+                  style: GoogleFonts.plusJakartaSans(fontSize: 13),
+                ),
               ),
-            ),
-          ],
+            ],
+          ),
+          backgroundColor: AppColors.primaryDark,
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
         ),
-        backgroundColor: AppColors.primaryDark,
-        behavior: SnackBarBehavior.floating,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-      ),
-    );
+      );
 
-    Navigator.of(context).pushAndRemoveUntil(
-      MaterialPageRoute(
-        builder: (context) => DashboardScreen(userName: displayName),
-      ),
-      (route) => false,
-    );
+      Navigator.of(context).pushAndRemoveUntil(
+        MaterialPageRoute(
+          builder: (context) => DashboardScreen(userName: user.fullName),
+        ),
+        (route) => false,
+      );
+    } on ApiException catch (e) {
+      if (!mounted) return;
+      setState(() => _isLoading = false);
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Row(
+            children: [
+              const Icon(Icons.error_outline_rounded, color: Colors.white, size: 20),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  e.firstErrorMessage,
+                  style: GoogleFonts.plusJakartaSans(fontSize: 13),
+                ),
+              ),
+            ],
+          ),
+          backgroundColor: Colors.red.shade700,
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _isLoading = false);
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Terjadi kesalahan: $e',
+            style: GoogleFonts.plusJakartaSans(fontSize: 13),
+          ),
+          backgroundColor: Colors.red.shade700,
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+        ),
+      );
+    }
   }
 
   void _handleGoogleLogin() async {

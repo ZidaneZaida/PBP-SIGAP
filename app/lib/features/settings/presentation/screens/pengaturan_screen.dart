@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:sigap/core/navigation/sigap_transitions.dart';
 import 'package:sigap/core/theme/app_colors.dart';
+import 'package:sigap/features/auth/data/auth_service.dart';
 import 'package:sigap/features/auth/presentation/screens/login_screen.dart';
 
 /// Screen "PengaturanScreen" SIGAP Kota Padang
@@ -643,8 +644,10 @@ class _PengaturanScreenState extends State<PengaturanScreen> {
               ),
             ),
             ElevatedButton(
-              onPressed: () {
+              onPressed: () async {
                 Navigator.pop(ctx);
+                await AuthService().logout();
+                if (!context.mounted) return;
                 Navigator.pushAndRemoveUntil(
                   context,
                   MaterialPageRoute(builder: (context) => const LoginScreen()),

@@ -8,7 +8,7 @@ class AuthFlowTest(TestCase):
     def setUp(self):
         self.client = APIClient()
 
-    def _register(self, email="warga@example.com", password="Password123"):
+    def _register(self, email="warga@example.com", password="SandiSigap2026"):
         return self.client.post(
             "/api/auth/register/",
             {
@@ -30,7 +30,7 @@ class AuthFlowTest(TestCase):
 
         user = User.objects.get(email="warga@example.com")
         self.assertTrue(hasattr(user, "profile"))
-        self.assertNotEqual(user.password, "Password123")
+        self.assertNotEqual(user.password, "SandiSigap2026")
 
     def test_email_duplikat_ditolak(self):
         self._register()
@@ -44,7 +44,7 @@ class AuthFlowTest(TestCase):
             {
                 "email": "lain@example.com",
                 "full_name": "Siti",
-                "password": "Password123",
+                "password": "SandiSigap2026",
                 "password_confirm": "Password124",
             },
             format="json",
@@ -59,7 +59,7 @@ class AuthFlowTest(TestCase):
         self._register()
         login = self.client.post(
             "/api/auth/login/",
-            {"email": "warga@example.com", "password": "Password123"},
+            {"email": "warga@example.com", "password": "SandiSigap2026"},
             format="json",
         )
         self.assertEqual(login.status_code, 200, login.content)
@@ -91,7 +91,7 @@ class AuthFlowTest(TestCase):
         self._register()
         login = self.client.post(
             "/api/auth/login/",
-            {"email": "warga@example.com", "password": "Password123"},
+            {"email": "warga@example.com", "password": "SandiSigap2026"},
             format="json",
         )
         access = login.json()["data"]["tokens"]["access"]

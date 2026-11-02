@@ -94,13 +94,13 @@ class FamilyMembership(models.Model):
             models.Index(fields=["user", "status"]),
         ]
 
+    def __str__(self):
+        return f"{self.user_id} @ {self.family_group_id}"
+
     def approve(self):
         self.status = self.Status.ACTIVE
         self.joined_at = timezone.now()
         self.save(update_fields=["status", "joined_at"])
-
-    def __str__(self):
-        return f"{self.user_id} @ {self.family_group_id}"
 
 
 class SafetyStatus(models.Model):

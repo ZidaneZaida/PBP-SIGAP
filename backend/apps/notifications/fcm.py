@@ -63,7 +63,7 @@ def send_to_tokens(tokens, title, body, data=None):
 
 def _cleanup(tokens, response):
     dead = []
-    for token, result in zip(tokens, response.responses):
+    for token, result in zip(tokens, response.responses, strict=False):
         if result.exception and "registration-token-not-registered" in str(result.exception):
             dead.append(token)
     if dead:

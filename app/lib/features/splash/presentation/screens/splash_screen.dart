@@ -29,6 +29,7 @@ import '../../../dashboard/presentation/screens/dashboard_screen.dart';
 class SplashScreen extends StatefulWidget {
   final VoidCallback? onInitializationComplete;
   final bool isUserLoggedIn;
+  final String userName;
   final bool? simulateEmergency;
   final bool? simulateOffline;
 
@@ -36,6 +37,7 @@ class SplashScreen extends StatefulWidget {
     super.key,
     this.onInitializationComplete,
     this.isUserLoggedIn = false,
+    this.userName = 'Warga Padang',
     this.simulateEmergency,
     this.simulateOffline,
   });
@@ -296,8 +298,8 @@ class _SplashScreenState extends State<SplashScreen> with TickerProviderStateMix
     if (widget.isUserLoggedIn) {
       Navigator.of(context).pushReplacement(
         PageRouteBuilder(
-          pageBuilder: (context, a1, a2) => const DashboardScreen(
-            userName: 'Aulia Rahman',
+          pageBuilder: (context, a1, a2) => DashboardScreen(
+            userName: widget.userName,
           ),
           transitionsBuilder: (context, a1, a2, child) => FadeTransition(opacity: a1, child: child),
           transitionDuration: const Duration(milliseconds: 400),

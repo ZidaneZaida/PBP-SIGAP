@@ -21,26 +21,25 @@ PBP-SIGAP/
 | Flutter | 3.47+ (Dart 3.13) |
 | Akun Supabase | free tier (database dev **dan** produksi) |
 
-Instalasi prasyarat di Debian/Ubuntu:
+Prasyarat disediakan lewat Miniconda (tanpa `sudo`, tanpa Docker):
 
 ```bash
-sudo apt install python3.13-venv
+conda create -n py313 python=3.13 -y                                   # interpreter
+conda create -n pg16 -c conda-forge --override-channels postgresql=16 -y  # server DB
 ```
 
-Tidak ada database lokal: dev & produksi memakai Supabase (lihat `docs/backend-implementation.md`).
+Dev memakai Postgres lokal (conda); staging/produksi memakai Supabase.
+Detail: [`docs/backend-implementation.md`](docs/backend-implementation.md).
 
 ## Menjalankan backend
 
 ```bash
 cd backend
-python3 -m venv .venv && source .venv/bin/activate
+~/miniconda3/envs/py313/bin/python -m venv server-django && source server-django/bin/activate
 pip install -U pip && pip install -r requirements-dev.txt
-cp .env.example .env      # isi DATABASE_URL (session pooler) + DEBUG=True
-python manage.py makemigrations
-python manage.py migrate
-python manage.py seed_demo
-python manage.py createsuperuser
-python manage.py runserver
+make db-init db-start db-create   # Postgres lokal sekali di awal
+cp .env.example .env                # default sudah menunjuk DB lokal
+make check && make migrate && make seed && make superuser && make run
 ```
 
 Cek: `curl http://127.0.0.1:8000/api/health/`
