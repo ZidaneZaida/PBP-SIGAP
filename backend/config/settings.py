@@ -14,7 +14,9 @@ environ.Env.read_env(BASE_DIR / ".env")
 
 SECRET_KEY = env("SECRET_KEY", default="dev-insecure-key")
 DEBUG = env.bool("DEBUG", default=False)
-ALLOWED_HOSTS = env.list("ALLOWED_HOSTS", default=["localhost", "127.0.0.1"])
+ALLOWED_HOSTS = env.list(
+    "ALLOWED_HOSTS", default=["localhost", "127.0.0.1", ".onrender.com"]
+)
 
 # --------------------------------------------------------------------------
 # Applications
@@ -111,6 +113,15 @@ if "test" in sys.argv:
 
 DATABASES["default"]["CONN_MAX_AGE"] = env.int("CONN_MAX_AGE", default=0)
 DATABASES["default"]["DISABLE_SERVER_SIDE_CURSORS"] = True
+DATABASES["default"]["CONN_HEALTH_CHECKS"] = env.bool(
+    "CONN_HEALTH_CHECKS", default=True
+)
+
+# Konfigurasi koneksi PostgreSQL (Neon / Supabase)
+if DATABASES["default"]["ENGINE"] == "django.db.backends.postgresql":
+    DATABASES["default"].setdefault("OPTIONS", {}).update({
+        "connect_timeout": 10,
+    })
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
