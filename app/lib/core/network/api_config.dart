@@ -1,11 +1,12 @@
 /// Konfigurasi URL dan Endpoint API Backend SIGAP.
 class ApiConfig {
   /// Base URL backend.
+  /// Default mengarah ke deployment Vercel online:
   /// Dapat dioverride saat compile/run dengan flag:
   /// `--dart-define=API_BASE_URL=http://127.0.0.1:8000`
   static const String baseUrl = String.fromEnvironment(
     'API_BASE_URL',
-    defaultValue: 'http://127.0.0.1:8000',
+    defaultValue: 'https://pbp-sigap.vercel.app',
   );
 
   // Auth endpoints
