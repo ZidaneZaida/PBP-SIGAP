@@ -4,7 +4,27 @@ from django.contrib import admin
 from django.http import JsonResponse
 from django.urls import include, path
 
+
+def root_view(request):
+    return JsonResponse(
+        {
+            "status": "success",
+            "message": "SIGAP Backend API is running.",
+            "data": {
+                "version": "0.1.0",
+                "docs": "https://github.com/ZidaneZaida/PBP-SIGAP",
+                "endpoints": {
+                    "health": "/api/health/",
+                    "dashboard": "/api/dashboard/",
+                    "admin": "/admin/",
+                },
+            },
+        }
+    )
+
+
 urlpatterns = [
+    path("", root_view, name="root_index"),
     path("admin/", admin.site.urls),
     path("api/", include("apps.common.urls")),
     path("api/", include("apps.accounts.urls")),

@@ -10,3 +10,4 @@ ignore = ["E501"]
 "**/tests/**" = ["B011"]
 # severity=null bermakna "sumber (BMKG) tidak memberi skala waspada/siaga/awas"
 "apps/alerts/models.py" = ["DJ001"]
+
