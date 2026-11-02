@@ -9,19 +9,29 @@
 
 | Milestone | Status | Isi |
 |---|---|---|
-| M0b · Fondasi | ✅ Kode selesai | settings, common, accounts (User/UserProfile/DeviceToken), health |
-| M1 · Auth & profil | ✅ Kode selesai | 11 endpoint auth + me |
-| M2 · Konten publik | ✅ Kode selesai | alerts + lazy BMKG, news, map, guides, dashboard, seed |
-| M3 · Keluarga & FCM | ✅ Kode selesai | 13 endpoint family, FCM client |
-| M4 · Audit & otorisasi | ✅ Kode selesai | `audit_logs`, mixin, admin, permission role |
+| M0b · Fondasi | ✅ Terverifikasi lokal | settings, common, accounts (User/UserProfile/DeviceToken), health |
+| M1 · Auth & profil | ✅ Terverifikasi lokal | 11 endpoint auth + me |
+| M2 · Konten publik | ✅ Terverifikasi lokal | alerts + lazy BMKG, news, map, guides, dashboard, seed |
+| M3 · Keluarga & FCM | ✅ Terverifikasi lokal | 13 endpoint family, FCM client |
+| M4 · Audit & otorisasi | ✅ Terverifikasi lokal | `audit_logs`, mixin, admin, permission role |
 | M5 · Deploy | ⬜ Belum | render.yaml, CI |
 | M6 · Integrasi Flutter | ⬜ Belum | `app/lib/core/network/` |
 
-**Yang belum diverifikasi:** `manage.py migrate`, `manage.py test`, dan `curl` endpoint — memerlukan venv + kredensial Supabase (lihat §3).
+**Terverifikasi (branch `feat/lokal`, Postgres 16 lokal):**
 
-Endpoint terdaftar: **44 path** (53 handler method). Belum dibuat: `POST/GET /api/reports/*` (P1, Fase 4) dan `POST /api/internal/sync-bmkg/` (opsional).
+| Cek | Hasil |
+|---|---|
+| `manage.py check` | 0 issue |
+| `manage.py migrate` | semua migrasi OK (termasuk `common.0001`) |
+| `manage.py seed_demo` | 2 sumber, 6 kontak, 12 titik, 9 panduan |
+| `manage.py test --noinput` | **33 test lulus** |
+| `ruff check .` | bersih |
+| `curl /api/health/` | `{"db":"ok"}` |
+| `curl /api/guides/`, `/assistance-points/`, `/emergency-contacts/` | data seed tampil |
+| `curl /api/me/` tanpa token | `401 UNAUTHORIZED` |
+| `curl /api/alerts/latest/` | `200`, `alert: null` (tidak ada gempa ≤300 km saat itu) |
 
-**Belum ada di repo:** folder `migrations/` untuk tiap app. Digenerate dengan `makemigrations` setelah venv siap.
+**Belum diverifikasi:** koneksi ke Supabase (placeholder `[ref]` belum diisi), FCM asli, upload foto.
 
 ---
 
@@ -45,47 +55,68 @@ backend/
 
 ## 3. Langkah manual yang diperlukan
 
-### 3.1 Prasyarat sistem
+### 3.1 Prasyarat
+
+Tidak butuh `sudo`, tidak butuh Docker. Yang dipakai: Miniconda (interpreter + server Postgres).
 
 ```bash
-sudo apt install python3.13-venv
+# interpreter Python 3.13 untuk venv
+conda create -n py313 python=3.13 -y
+
+# server Postgres 16
+conda create -n pg16 -c conda-forge --override-channels postgresql=16 -y
 ```
 
-### 3.2 Supabase
-
-1. Buat project di [supabase.com](https://supabase.com), region **Southeast Asia (Singapore)**.
-2. Dashboard → **Connect** → pilih **Session pooler (port 5432)**. Salin URI.
-3. Simpan password database.
-4. (Untuk upload foto) **Storage** → buat bucket **`avatars`**, set public.
-5. (Untuk upload foto) **Settings → API** → salin `service_role` key.
-
-### 3.3 venv + `.env`
+### 3.2 venv proyek
 
 ```bash
 cd backend
-python3 -m venv .venv && source .venv/bin/activate
+~/miniconda3/envs/py313/bin/python -m venv server-django
+source server-django/bin/activate
 pip install -U pip && pip install -r requirements-dev.txt
+```
+
+Nama venv boleh apa saja; Makefile memakai `VENV ?= server-django`. Override bila berbeda:
+`make PY=.venv/bin/python test`.
+
+### 3.3 Postgres lokal
+
+```bash
+make db-init     # initdb sekali saja (-U postgres, auth trust)
+make db-start    # jalankan di port 5432
+make db-create   # buat database `sigap`
+make db-stop     # hentikan
+```
+
+Data tersimpan di `~/sigap-pgdata`, log di `~/sigap-pgdata/server.log`.
+
+### 3.4 `.env`
+
+```bash
 cp .env.example .env
-# edit .env: DATABASE_URL=<session pooler>, DEBUG=True, ALLOW_REMOTE_TESTS=True
 ```
 
-### 3.4 Migrasi + seed + superuser
+Default `.env.example` sudah menunjuk Postgres lokal:
+
+```env
+DATABASE_URL=postgres://postgres@127.0.0.1:5432/sigap
+DEBUG=True
+ALLOW_REMOTE_TESTS=
+```
+
+### 3.5 Migrasi, data awal, superuser
 
 ```bash
-python manage.py makemigrations accounts alerts news map guides family common
-python manage.py migrate
-python manage.py seed_demo
-python manage.py createsuperuser
+make check                 # 0 issue
+make makemigrations        # bila model berubah
+make migrate
+make seed
+make superuser             # interaktif: email + password
+make run                   # http://127.0.0.1:8000
 ```
 
-### 3.5 Jalankan
-
-```bash
-python manage.py runserver
-curl http://127.0.0.1:8000/api/health/
-```
-
-Harapan: `{"status":"success","data":{"db":"ok","version":"0.1.0"}}`
+Verifikasi: `curl http://127.0.0.1:8000/api/health/`
+→ `{"status":"success","data":{"db":"ok","version":"0.1.0"}}`
 
 ### 3.6 FCM (opsional, untuk M3)
 
@@ -111,6 +142,20 @@ Django membuat database `test_postgres`. Role `postgres` Supabase **bukan superu
 
 Peringatan: opsi 2–3 memakai database project test apa adanya. **Jangan arahkan ke project produksi** — Django akan membuat/menghapus data di sana.
 
+### 4.1b `manage.py test` menggantung tanpa output
+
+Django menanyakan konfirmasi interaktif bila database test sudah ada:
+
+```
+Type 'yes' if you would like to try deleting the test database 'test_sigap', or 'no' to cancel:
+```
+
+Solusi: `make test` (sudah memakai `--noinput`). Bila terlanjur ada:
+
+```bash
+~/miniconda3/envs/pg16/bin/dropdb -h 127.0.0.1 -U postgres --if-exists test_sigap
+```
+
 ### 4.2 `runserver` me-redirect ke HTTPS
 
 `DEBUG=False` memasang `SECURE_SSL_REDIRECT=True`. Pastikan `.env` ada dan `DEBUG=True`.
@@ -125,13 +170,29 @@ Supabase free pause setelah 7 hari low-activity. Buka dashboard untuk membangunk
 
 ---
 
+### 4.5 `/api/alerts/latest/` mengembalikan `alert: null`
+
+Bukan error. Sumber `gempadirasakan.json` hanya memuat gempa yang **dirasakan**
+(±15 kejadian nasional terakhir); sering tidak ada yang berjarak ≤ 300 km dari Padang.
+Untuk demo, buat peringatan manual via Django Admin atau `POST /api/officer/alerts/`
+(jalur ini juga yang dipakai untuk banjir/longsor, yang tidak punya API BMKG).
+
+### 4.6 `assistance_point_count` di dashboard bernilai 0
+
+Dashboard hanya menghitung titik berstatus `verified`. Data seed sengaja
+`unverified` (belum dikonfirmasi BPBD). Verifikasi lewat Django Admin →
+Assistance Points → ubah `verification_status`, atau tambahkan query param
+`?verification_status=all` di `/api/assistance-points/`.
+
+---
+
 ## 5. Checklist verifikasi lokal
 
 | # | Perintah | Harapan |
 |---|---|---|
 | 1 | `python manage.py check` | 0 issue |
 | 2 | `python manage.py migrate` | tabel `accounts_user`, `alerts`, `family_*`, `audit_logs` dibuat |
-| 3 | `python manage.py test` | semua test lulus |
+| 3 | `make test` (`--noinput`) | 33 test lulus |
 | 4 | `curl /api/health/` | `data.db == "ok"` |
 | 5 | `curl /api/tidak-ada/` | `{"status":"error","code":"NOT_FOUND"}` |
 | 6 | `curl /api/alerts/latest/` | `data.alert` berisi atau `null`, tanpa error 500 |
@@ -147,6 +208,7 @@ Supabase free pause setelah 7 hari low-activity. Buka dashboard untuk membangunk
 | Keputusan | Konsekuensi |
 |---|---|
 | Tanpa PostGIS | radius pakai haversine Python; `risk_zones.geojson` JSONB |
+| Throttle | `apps.common.throttling.parse_window` mendukung `5/10min` (DRF bawaan hanya `<n>/<s\|m\|h\|d>`) |
 | Tanpa cron | `/api/alerts/latest/` dan `/api/dashboard/` memicu sync BMKG (cache 60 s) |
 | FCM sinkron | alert tetap tersimpan walau FCM gagal; respons menyertakan `fcm_error` |
 | Approval wajib | gabung grup = `pending` sampai admin menyetujui (`FR-25` BRD) |

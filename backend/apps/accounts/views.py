@@ -3,7 +3,6 @@
 import uuid as uuid_lib
 
 from rest_framework.permissions import AllowAny, IsAuthenticated
-from rest_framework.throttling import ScopedRateThrottle
 from rest_framework.views import APIView
 from rest_framework_simplejwt.tokens import RefreshToken
 from rest_framework_simplejwt.views import TokenRefreshView
@@ -22,6 +21,7 @@ from apps.accounts.serializers import (
 )
 from apps.accounts.services import send_password_reset_email, upload_avatar
 from apps.common.responses import ok
+from apps.common.throttling import FlexibleScopedRateThrottle
 
 
 def _tokens_for(user):
@@ -35,7 +35,7 @@ def _auth_payload(user):
 
 class RegisterView(APIView):
     permission_classes = [AllowAny]
-    throttle_classes = [ScopedRateThrottle]
+    throttle_classes = [FlexibleScopedRateThrottle]
     throttle_scope = "register"
 
     def post(self, request):
@@ -47,7 +47,7 @@ class RegisterView(APIView):
 
 class LoginView(APIView):
     permission_classes = [AllowAny]
-    throttle_classes = [ScopedRateThrottle]
+    throttle_classes = [FlexibleScopedRateThrottle]
     throttle_scope = "login"
 
     def post(self, request):
@@ -152,7 +152,7 @@ class DeviceTokenView(APIView):
 
 class PasswordResetRequestView(APIView):
     permission_classes = [AllowAny]
-    throttle_classes = [ScopedRateThrottle]
+    throttle_classes = [FlexibleScopedRateThrottle]
     throttle_scope = "password_reset"
 
     def post(self, request):

@@ -38,3 +38,17 @@ class HaversineTest(TestCase):
         # Padang -> Bukittinggi ± 70 km garis lurus
         distance = haversine_m(-0.9492, 100.3543, -0.3055, 100.3691)
         self.assertAlmostEqual(distance / 1000, 71.5, delta=3)
+
+class NotFoundEnvelopeTest(TestCase):
+    """handler404 hanya aktif saat DEBUG=False."""
+
+    def test_404_memakai_amplop_json_saat_debug_off(self):
+        from django.test import override_settings
+
+        with override_settings(DEBUG=False):
+            response = self.client.get("/api/tidak-ada/")
+        self.assertEqual(response.status_code, 404)
+        self.assertEqual(response["Content-Type"], "application/json")
+        body = response.json()
+        self.assertEqual(body["status"], "error")
+        self.assertEqual(body["code"], "NOT_FOUND")

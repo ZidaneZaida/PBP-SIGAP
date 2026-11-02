@@ -9,10 +9,10 @@ class FamilyFlowTest(TestCase):
     def setUp(self):
         self.client = APIClient()
         self.admin = User.objects.create_user(
-            email="admin@example.com", full_name="Pak Ahmad", password="Password123"
+            email="admin@example.com", full_name="Pak Ahmad", password="SandiSigap2026"
         )
         self.member = User.objects.create_user(
-            email="anggota@example.com", full_name="Budi", password="Password123"
+            email="anggota@example.com", full_name="Budi", password="SandiSigap2026"
         )
 
     def _login(self, user):

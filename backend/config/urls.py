@@ -1,6 +1,7 @@
 """URL root SIGAP."""
 
 from django.contrib import admin
+from django.http import JsonResponse
 from django.urls import include, path
 
 urlpatterns = [
@@ -16,8 +17,6 @@ urlpatterns = [
 
 admin.site.site_header = "SIGAP — Siaga Bencana Kota Padang"
 admin.site.site_title = "SIGAP Admin"
-
-from django.http import JsonResponse
 
 
 def handler404(request, exception):

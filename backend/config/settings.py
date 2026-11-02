@@ -142,9 +142,10 @@ REST_FRAMEWORK = {
     "PAGE_SIZE": 10,
     "EXCEPTION_HANDLER": "apps.common.exceptions.api_exception_handler",
     "DEFAULT_THROTTLE_CLASSES": ["rest_framework.throttling.AnonRateThrottle"],
+    # Jendela bebas (mis. 5/10min) ditangani apps.common.throttling.
     "DEFAULT_THROTTLE_RATES": {
         "anon": "120/min",
-        "login": "10/10min",
+        "login": "5/10min",
         "register": "20/hour",
         "password_reset": "5/hour",
     },
