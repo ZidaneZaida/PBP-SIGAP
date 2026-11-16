@@ -1071,3 +1071,144 @@ Header wajib: `X-Internal-Token: $INTERNAL_SYNC_TOKEN`
 | POST | `/api/internal/sync-bmkg/` | token | Opsional, penjadwal eksternal |
 
 **Total:** 51 endpoint. **Baru dari versi 1.0:** 13 endpoint (ditandai **Baru**).
+
+---
+
+## Addendum API Revisi 2.0 (SIGAP-Vision & Shelter TES)
+
+Endpoint baru untuk mendukung alur kerja pascagempa dan pemetaan kerusakan:
+
+### 1. `POST /api/damage-reports/` 🔒
+Menerima laporan hasil pemindaian kamera warga (bisa dikirim tertunda saat koneksi internet pulih). Mendukung `multipart/form-data` (dengan file foto) atau `application/json` (jika hemat kuota/tanpa upload foto).
+
+**Content-Type:** `multipart/form-data` atau `application/json`
+
+**Fields:**
+- `latitude` (float, required): Koordinat lintang lokasi retakan
+- `longitude` (float, required): Koordinat bujur lokasi retakan
+- `damage_level` (string, required): `minor` | `moderate` | `critical`
+- `confidence_score` (float, required): Angka desimal 0.0 – 1.0 dari model TFLite
+- `description` (string, optional): Catatan tambahan warga
+- `image` (file, optional): File foto dari kamera (.jpg / .png, maks 5 MB). Jika diunggah, backend akan menyimpannya dan menghasilkan `image_url`.
+
+**Request Body (JSON Alternatif):**
+```json
+{
+  "latitude": -0.9492,
+  "longitude": 100.3541,
+  "damage_level": "critical",
+  "confidence_score": 0.92,
+  "description": "Kolom penyangga retak geser parah",
+  "image_url": null
+}
+```
+
+**Response 201 Created:**
+```json
+{
+  "status": "success",
+  "data": {
+    "id": "uuid",
+    "damage_level": "critical",
+    "is_verified_by_officer": false,
+    "created_at": "2026-11-16T12:00:00Z"
+  }
+}
+```
+
+### 2. `GET /api/damage-reports/heatmap/` 🔓
+Menghasilkan kumpulan koordinat titik kerusakan teragregasi untuk visualisasi layer peta BPBD.
+
+**Response 200 OK:**
+```json
+{
+  "status": "success",
+  "data": [
+    {
+      "latitude": -0.9492,
+      "longitude": 100.3541,
+      "damage_level": "critical",
+      "count": 1
+    }
+  ]
+}
+```
+
+### 3. `GET /api/shelters/tsunami/` 🔓
+Daftar Tempat Evakuasi Sementara (TES) bertingkat khusus tsunami di Kota Padang dengan kapasitas dan jarak.
+
+**Query Parameters:**
+
+| Parameter | Tipe | Keterangan |
+|---|---|---|
+| `lat` | float | Latitude posisi pengguna saat ini |
+| `lng` | float | Longitude posisi pengguna saat ini |
+| `limit` | int | Jumlah hasil maksimum (default: 5) |
+
+**Response 200 OK:**
+```json
+{
+  "status": "success",
+  "data": [
+    {
+      "id": "uuid",
+      "name": "Zona Aman Bukit Lampu",
+      "zone_type": "elevation",
+      "elevation_min_meters": 15.2,
+      "latitude": -0.9123,
+      "longitude": 100.3821,
+      "distance_meters": 850.0,
+      "estimated_walk_minutes": 11,
+      "risk_zone": "safe"
+    }
+  ]
+}
+```
+
+**Catatan:** Data zona aman bersumber dari polygon elevasi DEMNAS (BIG Indonesia) yang telah di-pre-process. Kawasan dengan elevasi > 10 mdpl dikategorikan sebagai `safe`, 5–10 mdpl sebagai `caution`, dan < 5 mdpl sebagai `danger`.
+
+---
+
+### 4. `GET /api/officer/damage-reports/pending/` 👮
+Daftar laporan kerusakan bangunan yang menunggu verifikasi petugas BPBD.
+
+**Response 200 OK:**
+```json
+{
+  "status": "success",
+  "data": [
+    {
+      "id": "uuid",
+      "user": "uuid",
+      "latitude": -0.9492,
+      "longitude": 100.3541,
+      "damage_level": "critical",
+      "confidence_score": 0.92,
+      "is_verified_by_officer": false,
+      "created_at": "2026-11-16T12:00:00Z"
+    }
+  ]
+}
+```
+
+### 5. `PATCH /api/officer/damage-reports/{id}/verify/` 👮
+Memverifikasi atau menolak laporan kerusakan dari warga. Laporan yang terverifikasi akan masuk ke layer heatmap publik.
+
+**Request Body:**
+```json
+{
+  "is_verified": true
+}
+```
+
+**Response 200 OK:**
+```json
+{
+  "status": "success",
+  "data": {
+    "id": "uuid",
+    "is_verified_by_officer": true
+  }
+}
+```
+

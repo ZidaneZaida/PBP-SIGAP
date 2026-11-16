@@ -2,8 +2,8 @@
 
 ## SIGAP --- Sistem Informasi dan Kesiapsiagaan Bencana Kota Padang
 
-**Versi dokumen:** 1.0\
-**Status:** Draft untuk validasi dan perencanaan MVP\
+**Versi dokumen:** 2.0 (Revisi Spesialisasi Gempa & Tsunami Kota Padang)\
+**Status:** Disetujui untuk Rencana Pengembangan Lanjutan\
 **Platform:** Android (Flutter) dan Website (PC/Desktop)\
 **Wilayah operasional awal:** Kota Padang, Sumatera Barat\
 **Nama produk:** SIGAP\
@@ -1187,3 +1187,133 @@ tidak dapat dijamin.
     sesuai proses dan kewenangan yang ditetapkan.
 -   **Data usang:** data yang waktu pembaruannya sudah melewati batas
     yang ditentukan atau tidak dapat dipastikan masih berlaku.
+
+------------------------------------------------------------------------
+
+## 10. Addendum Revisi: Spesialisasi Gempa Bumi & Tsunami Kota Padang (PRD v2.0)
+
+Dokumen addendum ini mendefinisikan perubahan kebutuhan fungsional dan panduan implementasi antarmuka pengguna (UI/UX) untuk tim **Frontend (Flutter)** dan **Backend (Django)** sehubungan dengan pivot aplikasi menjadi spesialisasi tanggap darurat gempa bumi Megathrust Mentawai dan tsunami di Kota Padang.
+
+### 10.1 Inventaris Layar Frontend (Frontend Screen Matrix)
+
+Berikut adalah panduan lengkap pembagian layar bagi pengembang Frontend:
+
+```
+[FLOW NAVIGASI APLIKASI REVISI]
+                      ┌──────────────────────┐
+                      │    Splash Screen     │
+                      └──────────┬───────────┘
+                                 │
+                 ┌───────────────┴───────────────┐
+                 ▼                               ▼
+       ┌───────────────────┐           ┌───────────────────┐
+       │   Login Screen    │           │  Register Screen  │
+       └─────────┬─────────┘           └─────────┬─────────┘
+                 └───────────────┬───────────────┘
+                                 │
+                                 ▼
+                     ┌──────────────────────┐
+                     │     Home / Beranda   │◄──────────────┐
+                     └──────────┬───────────┘               │
+                                │ (Bottom Nav & FAB)        │
+         ┌───────────────┬──────┴────────┬───────────────┐  │
+         ▼               ▼               ▼               ▼  │
+  ┌─────────────┐ ┌─────────────┐ ┌─────────────┐ ┌─────────┴───┐
+  │ Peringatan  │ │ Peta Siaga  │ │  Keluarga   │ │ Pengaturan  │
+  │   (Gempa)   │ │ (TES & Heat)│ │ (Status OK) │ │  & Profil   │
+  └─────────────┘ └─────────────┘ └─────────────┘ └─────────────┘
+         ▲
+         │ (Quick Actions & Emergency Triggers)
+   ┌─────┴───────────────────────┬────────────────────────┐
+   ▼                             ▼                        ▼
+┌─────────────────────────┐ ┌──────────────────────┐ ┌──────────────────────┐
+│  damage_camera_screen   │ │evacuation_guide_screen│ │emergency_beacon_screen│
+│ (Scanner SIGAP-Vision)  │ │ (Tsunami Golden Time)│ │ (Offline BLE Beacon) │
+└──────────┬──────────────┘ └──────────────────────┘ └──────────────────────┘
+           ▼
+┌─────────────────────────┐
+│  damage_result_screen   │
+│(Hasil Asesmen & Tindakan│
+└─────────────────────────┘
+```
+
+#### A. Layar yang Dipertahankan (Retained Screens)
+1. **`splash_screen.dart`**: Inisialisasi token auth dan pengecekan izin perangkat (kamera, lokasi, Bluetooth).
+2. **`login_screen.dart` & `register_screen.dart`**: Autentikasi dan pendaftaran warga dengan validasi nomor kontak darurat keluarga.
+3. **`profile_screen.dart` & `pengaturan_screen.dart`**: Pengaturan akun dan preferensi batas ambang magnitudo gempa yang memicu sirene darurat.
+4. **`keluarga_screen.dart`**: Monitoring status aman/butuh bantuan anggota keluarga terdaftar.
+
+#### B. Layar yang Dimodifikasi (Modified Screens)
+1. **`home_screen.dart` (Beranda)**:
+   - **Normal State:** Tambahkan widget Floating Action Button (FAB) atau Hero Banner: *"Pindai Kerusakan Rumah (SIGAP-Vision)"*.
+   - **Emergency State:** Ketika status peringatan gempa/tsunami aktif, UI otomatis menampilkan *Emergency Card* dengan hitung mundur waktu evakuasi (*Golden Time Countdown*) dan tombol langsung ke panduan evakuasi.
+2. **`peringatan_screen.dart` (Peringatan Dini)**:
+   - Difokuskan secara spesifik pada data guncangan gempa bumi BMKG (Magnitudo, Kedalaman, Titik Episentrum, Jarak ke Padang, Peta Guncangan Shakemap MMI, dan Status Tsunami Padang).
+   - Menghapus kategori bencana non-gempa dari filter utama untuk menjaga kecepatan akses darurat.
+3. **`peta_screen.dart` / `risk_map_screen.dart` (Peta Siaga)**:
+   - Tambahkan layer geospasial **Tempat Evakuasi Sementara (TES)** Kota Padang (gedung-gedung bertingkat bersertifikasi evakuasi tsunami).
+   - Tambahkan toggle layer **Damage Heatmap** (sebaran kerusakan bangunan warga).
+
+#### C. Layar Baru (New Screens)
+1. **`damage_camera_screen.dart` (Kamera Pemindai Kerusakan Bangunan)**:
+   - **Tujuan:** Pengguna memotret pilar, kolom, balok beton, atau dinding retak pascagempa.
+   - **Elemen UI:** Viewfinder kamera dengan framing target, tombol senter/flash on/off, panduan jarak pemotretan (1–2 meter), tombol shutter kamera, dan opsi ambil foto dari galeri.
+2. **`damage_result_screen.dart` (Hasil Analisis Asesmen Kerusakan)**:
+   - **Tujuan:** Menampilkan hasil klasifikasi model on-device AI dan instruksi keselamatan konkret.
+   - **Elemen UI:**
+     - Kartu Level Risiko:
+       - **HIJAU (Aman/Minor):** Retak rambut/plester non-struktural.
+       - **KUNING (Waspada/Moderate):** Retak geser diagonal pada dinding bata.
+       - **MERAH (Bahaya Kritis/Severe):** Kerusakan kolom/balok beton struktural. Instruksi: *"JANGAN MASUKI RUMAH! RISIKO AMBRUK AKIBAT GEMPA SUSULAN."*
+     - Skor Confidence (%) dan detail temuan.
+     - Tombol Aksi: *"Simpan Laporan & Sinkron ke BPBD"* serta *"Cari Shelter/Titik Kumpul Terdekat"*.
+3. **`evacuation_guide_screen.dart` (Panduan Evakuasi Tsunami Cerdas)**:
+   - **Tujuan:** Menuntun pengguna mengambil keputusan tepat dalam *Golden Time* 20–30 menit sebelum gelombang tsunami tiba.
+   - **Elemen UI:** Timer hitung mundur estimasi gelombang, kartu keputusan evakuasi vertikal vs horizontal, jarak dan estimasi waktu tempuh berjalan kaki ke TES terdekat.
+4. **`emergency_beacon_screen.dart` (Mode Darurat Offline BLE & Sinyal Bantuan)**:
+   - **Tujuan:** Menyelamatkan korban yang tertimbun puing atau berada di area dengan BTS/jaringan seluler padam total.
+   - **Elemen UI:**
+     - Switch pemancar sinyal suar darurat BLE (*Emergency Beacon Transmitter*).
+     - Tombol Peluit Digital / Sirene Akustik berulang.
+     - Tombol Strobo Senter Morse SOS.
+     - Mode tampilan layar hitam ultra-hemat baterai (*OLED Black Saving Mode*).
+
+---
+
+### 10.2 Kebutuhan Fungsional Baru (Functional Requirements)
+
+| Kode | Nama Kebutuhan | Deskripsi Fungsional | Prioritas |
+|---|---|---|---|
+| **FR-REV-01** | On-Device Structural Assessment | Aplikasi mampu melakukan klasifikasi gambar retakan struktur bangunan secara lokal menggunakan model TensorFlow Lite tanpa memerlukan koneksi internet. | **P0 (Kritis)** |
+| **FR-REV-02** | Offline Report Queue & Sync | Laporan hasil pemindaian kamera disimpan pada penyimpanan lokal (SQLite/Cache) jika offline, dan otomatis disinkronkan ke backend Django begitu koneksi internet terhubung. | **P0 (Kritis)** |
+| **FR-REV-03** | Tsunami Golden Time Calculation | Menghitung estimasi sisa waktu evakuasi warga dan memberikan rekomendasi shelter TES terdekat berdasarkan koordinat GPS pengguna saat gempa terjadi. | **P0 (Kritis)** |
+| **FR-REV-04** | BLE Emergency Beacon Broadcast | Aplikasi mampu memancarkan paket sinyal BLE darurat berisi koordinat terakhir dan status korban saat diaktifkan di kondisi terisolasi. | **P1 (Penting)** |
+| **FR-REV-05** | BPBD Damage Heatmap Aggregation | Backend Django mengagregasi data koordinat kerusakan bangunan dari warga dan menyajikan API endpoint heatmap geospasial untuk visualisasi peta sebaran kerusakan. | **P1 (Penting)** |
+
+---
+
+### 10.3 Non-Functional Requirements Fitur Baru (NFR)
+
+| Kode | Parameter | Target |
+|---|---|---|
+| **NFR-AI-01** | Waktu inferensi model TFLite | < 2 detik pada perangkat *low-mid range* (Snapdragon 625) |
+| **NFR-AI-02** | Ukuran model bundled di APK | < 8 MB |
+| **NFR-AI-03** | Resolusi gambar input kamera | Min 480×480px; app otomatis resize ke 224×224px sebelum inferensi |
+| **NFR-BLE-01** | Radius sinyal BLE Beacon darurat | 30–70 meter (target 50 meter Line-of-Sight) |
+| **NFR-BLE-02** | Pemancaran BLE saat layar terkunci | Wajib tetap aktif sebagai foreground service |
+| **NFR-BMKG-01** | Atribusi sumber data gempa | Nama dan logo BMKG wajib tampil di setiap halaman yang menampilkan data gempa |
+
+### 10.4 Disclaimer Wajib AI Asesmen Bangunan
+
+Teks berikut adalah **konten wajib** yang harus tampil di UI layar `damage_result_screen.dart` **sebelum kartu hasil asesmen muncul**, tidak bisa di-dismiss selama minimal 3 detik:
+
+> *"Hasil analisis ini dihasilkan oleh model kecerdasan buatan (AI) dan **bukan merupakan pengganti penilaian struktural oleh ahli teknik sipil atau insinyur bangunan bersertifikat**. Gunakan hasil ini hanya sebagai panduan tindakan darurat awal. SIGAP tidak bertanggung jawab atas keputusan yang diambil berdasarkan analisis ini."*
+
+### 10.5 Sumber Data Terintegrasi
+
+| Sumber Data | Digunakan Untuk | Strategi Akses |
+|---|---|---|
+| **BMKG Open API (InaTEWS)** | Data gempa real-time, Shakemap MMI, status tsunami | Backend Django polling tiap 60 detik sebagai proxy + cache |
+| **DEMNAS (BIG Indonesia)** | Polygon zona aman/bahaya tsunami berbasis elevasi > 10 mdpl | Pre-processed menjadi GeoJSON statis, disimpan di aset backend & Flutter |
+| **Dataset Kaggle/HuggingFace** | Training & fine-tuning model klasifikasi retakan bangunan | Offline, digunakan saat training; model hasil disimpan sebagai `.tflite` |
+

@@ -724,3 +724,46 @@ BRD Aplikasi SIGAP (Siaga Bencana Kota Padang)
 
 Page 22 of 22 
 
+---
+
+## 19. Addendum Bisnis & Matriks Revisi Layar (BRD v2.0 - Spesialisasi Gempa Megathrust & Tsunami Padang)
+
+### 19.1 Rasionalisasi Bisnis Pivot (Strategic Value)
+Dalam lanskap kebencanaan Kota Padang, ancaman gempa bumi dari Zona Megathrust Mentawai dan potensi tsunami adalah risiko katastropik nomor satu. SIGAP v2.0 mengubah nilai tawaran produk (*value proposition*) dari portal berita bencana pasif menjadi **alat tanggap darurat aktif berbasis AI dan teknologi offline-first**.
+
+### 19.2 Tujuan Bisnis Tambahan
+| Kode | Tujuan Bisnis | Indikator Keberhasilan (KPI) |
+|---|---|---|
+| **T6** | Mencegah korban jiwa akibat gempa susulan (*aftershocks*) melalui penilaian mandiri struktur bangunan | Tingkat akurasi asesmen visual AI on-device ≥ 85% dan jumlah pemindaian mandiri pascagempa |
+| **T7** | Mengoptimalkan evakuasi tsunami dalam kurun waktu emas (*Golden Time* 20–30 menit) | Penurunan waktu pengambilan keputusan warga menuju TES terdekat (< 2 menit pascagempa) |
+| **T8** | Mempertahankan kapabilitas tanggap darurat saat jaringan seluler dan listrik padam total | Keberhasilan pemancaran sinyal suar darurat BLE pada mode tanpa internet |
+| **T9** | Memberikan pemetaan kerusakan real-time bagi BPBD Kota Padang | Terbentuknya Heatmap Sebaran Kerusakan Agregat berbasis crowdsourcing terverifikasi |
+
+### 19.3 Matriks Kebutuhan Layar Frontend (Frontend Screen Deliverables)
+Tabel ini menjadi panduan kerja bagi tim Frontend (FE) mengenai layar yang dipertahankan, dimodifikasi, dan dibuat baru:
+
+| Kode Layar | Nama Layar | File Target (Flutter) | Status | Kebutuhan Bisnis & Aksi FE |
+|---|---|---|---|---|
+| **SCR-01** | Splash & Init | `splash_screen.dart` | **Dipertahankan** | Inisialisasi token auth JWT, cek izin kamera, lokasi, dan Bluetooth BLE. |
+| **SCR-02** | Login & Register | `login_screen.dart`, `register_screen.dart` | **Dipertahankan** | Otentikasi warga Padang dan pencatatan nomor darurat keluarga. |
+| **SCR-03** | Profile & Settings | `profile_screen.dart`, `pengaturan_screen.dart` | **Dipertahankan** | Manajemen profil dan preferensi threshold gempa BMKG untuk alarm otomatis. |
+| **SCR-04** | Keluarga Siaga | `keluarga_screen.dart` | **Dipertahankan** | Dashboard konfirmasi status selamat anggota keluarga (*Safe / Need Help*). |
+| **SCR-05** | Beranda Siaga | `home_screen.dart` | **Dimodifikasi** | Menambahkan Banner Cepat: *"Pindai Kerusakan Rumah (SIGAP-Vision)"*, serta kartu darurat *Golden Time Tsunami* saat ada gempa aktif. |
+| **SCR-06** | Peringatan Gempa | `peringatan_screen.dart` | **Dimodifikasi** | Menampilkan Shakemap MMI Padang, parameter seismik (magnitudo, kedalaman, episentrum), dan status potensi tsunami resmi BMKG. |
+| **SCR-07** | Peta Siaga Padang | `peta_screen.dart`, `risk_map_screen.dart` | **Dimodifikasi** | Menambahkan layer geospasial shelter TES (Tempat Evakuasi Sementara) bertingkat resmi Padang dan toggle layer Heatmap Kerusakan Agregat. |
+| **SCR-08** | SIGAP-Vision Scanner | `damage_camera_screen.dart` | **BARU** | Layar kamera dengan overlay pemandu fokus ke kolom/dinding retak, switch torch/senter, dan pengambilan foto offline. |
+| **SCR-09** | Hasil Asesmen Bangunan | `damage_result_screen.dart` | **BARU** | Menampilkan kartu level risiko (Aman / Waspada / Bahaya Kritis), rekomendasi keselamatan, serta tombol simpan & sinkron ke BPBD. |
+| **SCR-10** | Panduan Evakuasi Tsunami | `evacuation_guide_screen.dart` | **BARU** | Hitung mundur waktu tiba tsunami (*Golden Time*), rekomendasi rute TES vertikal vs evakuasi horizontal ke zona aman. |
+| **SCR-11** | Mode Suar SOS Offline | `emergency_beacon_screen.dart` | **BARU** | Layar darurat tanpa internet: pemancar suar BLE beacon, sirene/peluit digital berkala, lampu kilat strobo Morse SOS, dan mode ultra-hemat baterai. |
+
+### 19.4 Keputusan Arsitektur Final
+
+| Topik | Keputusan | Alasan |
+|---|---|---|
+| **Sumber data zona evakuasi** | Berbasis elevasi DEMNAS (BIG) — area > 10 mdpl = zona aman | Tidak ada database TES resmi dalam format digital; pendekatan elevasi lebih akurat dan tidak bergantung pihak ketiga |
+| **Sumber data peringatan gempa** | BMKG Open API (InaTEWS) — polling via backend Django setiap 60 detik | API publik resmi pemerintah, tanpa autentikasi, mencakup Shakemap MMI & status tsunami |
+| **Lokasi modul laporan kerusakan** | Modul Django baru: `backend/apps/damage_assessment/` | Bounded context berbeda dari `alerts`; memudahkan permission BPBD terpisah |
+| **Strategi deploy model AI** | Hybrid: model v1 di-bundle di APK + OTA update model v2+ via backend | Menjamin fungsi offline; memungkinkan peningkatan akurasi tanpa update APK |
+| **Disclaimer AI** | Wajib tampil di UI selama min. 3 detik sebelum hasil bisa diakses | Perlindungan hukum produk dan etika penggunaan AI untuk keputusan keselamatan jiwa |
+
+

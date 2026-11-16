@@ -535,3 +535,126 @@ python manage.py loaddata fixtures/sources.json fixtures/emergency_contacts.json
 ```bash
 pg_dump "$DATABASE_URL" --no-owner --no-privileges -f backup_$(date +%F).sql
 ```
+
+---
+
+## Addendum Revisi: Model Laporan Kerusakan Bangunan (`damage_reports`)
+
+Untuk mendukung fitur **SIGAP-Vision** dan **Heatmap Kerusakan Agregat**:
+
+### Tabel: `damage_reports`
+
+Menyimpan laporan hasil pemindaian visual struktur bangunan pascagempa dari warga.
+
+```sql
+CREATE TABLE damage_reports (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id UUID NOT NULL REFERENCES accounts_user(id) ON DELETE CASCADE,
+    latitude DOUBLE PRECISION NOT NULL,
+    longitude DOUBLE PRECISION NOT NULL,
+    damage_level VARCHAR(20) NOT NULL CHECK (damage_level IN ('minor', 'moderate', 'critical')),
+    confidence_score DOUBLE PRECISION NOT NULL,
+    description TEXT,
+    image_url VARCHAR(500),
+    is_verified_by_officer BOOLEAN NOT NULL DEFAULT FALSE,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    synced_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX idx_damage_reports_coords ON damage_reports(latitude, longitude);
+CREATE INDEX idx_damage_reports_level ON damage_reports(damage_level);
+```
+
+### Relasi Django Model
+```python
+# alerts/models.py atau damage_assessment/models.py
+class DamageReport(models.Model):
+    class DamageLevel(models.TextChoices):
+        MINOR = 'minor', 'Ringan (Non-Struktural)'
+        MODERATE = 'moderate', 'Sedang (Waspada Dinding)'
+        CRITICAL = 'critical', 'Kritis (Bahaya Struktur/Kolom)'
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='damage_reports')
+    latitude = models.FloatField()
+    longitude = models.FloatField()
+    damage_level = models.CharField(max_length=20, choices=DamageLevel.choices)
+    confidence_score = models.FloatField()
+    description = models.TextField(blank=True, null=True)
+    image_url = models.URLField(max_length=500, blank=True, null=True)
+    is_verified_by_officer = models.BooleanField(default=False)
+    created_at = models.DateTimeField(auto_now_add=True)
+    synced_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['-created_at']
+```
+
+---
+
+## Addendum Revisi: Tabel Zona Aman Berbasis Elevasi (`safe_zones`)
+
+Untuk mendukung fitur **Smart Tsunami Evacuation** dan layer peta zona bahaya/aman tsunami. Data bersumber dari DEMNAS (BIG Indonesia) yang telah di-pre-process.
+
+### Tabel: `safe_zones`
+
+```sql
+CREATE TABLE safe_zones (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    name VARCHAR(200) NOT NULL,
+    zone_type VARCHAR(30) NOT NULL DEFAULT 'elevation',
+    risk_level VARCHAR(20) NOT NULL CHECK (risk_level IN ('safe', 'caution', 'danger')),
+    elevation_min_meters DOUBLE PRECISION NOT NULL,
+    latitude DOUBLE PRECISION NOT NULL,
+    longitude DOUBLE PRECISION NOT NULL,
+    boundary_geojson JSONB,
+    description TEXT,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX idx_safe_zones_coords ON safe_zones(latitude, longitude);
+CREATE INDEX idx_safe_zones_risk ON safe_zones(risk_level);
+```
+
+### Relasi Django Model
+```python
+# damage_assessment/models.py
+class SafeZone(models.Model):
+    class RiskLevel(models.TextChoices):
+        SAFE = 'safe', 'Aman (> 10 mdpl)'
+        CAUTION = 'caution', 'Waspada (5–10 mdpl)'
+        DANGER = 'danger', 'Bahaya (< 5 mdpl)'
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    name = models.CharField(max_length=200)
+    zone_type = models.CharField(max_length=30, default='elevation')
+    risk_level = models.CharField(max_length=20, choices=RiskLevel.choices)
+    elevation_min_meters = models.FloatField()
+    latitude = models.FloatField()
+    longitude = models.FloatField()
+    boundary_geojson = models.JSONField(blank=True, null=True)
+    description = models.TextField(blank=True, null=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['-elevation_min_meters']
+```
+
+> **Catatan:** Data awal `safe_zones` dimuat melalui Django fixture dari hasil pre-processing polygon elevasi DEMNAS Kota Padang menggunakan QGIS / GDAL + Python (`Rasterio`, `Geopandas`). Proses ini dijalankan satu kali secara offline oleh tim data sebelum deployment.
+
+### Lokasi Modul Backend
+Kedua model di atas (`DamageReport` dan `SafeZone`) ditempatkan di modul Django baru:
+```
+backend/apps/damage_assessment/
+├── __init__.py
+├── admin.py
+├── apps.py
+├── models.py        ← DamageReport, SafeZone
+├── serializers.py
+├── urls.py
+├── views.py
+└── migrations/
+```
+
