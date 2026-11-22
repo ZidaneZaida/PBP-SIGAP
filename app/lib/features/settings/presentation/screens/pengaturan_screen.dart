@@ -5,6 +5,7 @@ import 'package:sigap/core/navigation/sigap_transitions.dart';
 import 'package:sigap/core/theme/app_colors.dart';
 import 'package:sigap/features/auth/data/auth_service.dart';
 import 'package:sigap/features/auth/presentation/screens/login_screen.dart';
+import 'package:sigap/widgets/checklist_tas_siaga.dart';
 
 /// Screen "PengaturanScreen" SIGAP Kota Padang
 ///
@@ -716,6 +717,7 @@ class _PengaturanScreenState extends State<PengaturanScreen> {
 
       body: SafeArea(
         child: ListView(
+          cacheExtent: 1000,
           physics: const BouncingScrollPhysics(),
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
           children: [
@@ -736,8 +738,8 @@ class _PengaturanScreenState extends State<PengaturanScreen> {
                   borderRadius: const BorderRadius.vertical(top: Radius.circular(18)),
                   onTap: _showProfileContactModal,
                   child: Container(
-                    constraints: const BoxConstraints(minHeight: 68),
-                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                    constraints: const BoxConstraints(minHeight: 58),
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                     child: Row(
                       children: [
                         Container(
@@ -794,11 +796,10 @@ class _PengaturanScreenState extends State<PengaturanScreen> {
 
                 // Menu 2: ID Medis (Darurat SAR) (Ikon palang merah, >= 68px)
                 InkWell(
-                  borderRadius: const BorderRadius.vertical(bottom: Radius.circular(18)),
                   onTap: _showMedicalIdModal,
                   child: Container(
-                    constraints: const BoxConstraints(minHeight: 68),
-                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                    constraints: const BoxConstraints(minHeight: 58),
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                     child: Row(
                       children: [
                         Container(
@@ -868,10 +869,67 @@ class _PengaturanScreenState extends State<PengaturanScreen> {
                     ),
                   ),
                 ),
+
+                const Divider(height: 1, color: AppColors.borderLight),
+
+                // Menu 3: Checklist Tas Siaga
+                Material(
+                  color: Colors.transparent,
+                  child: ListTile(
+                    dense: true,
+                    visualDensity: VisualDensity.compact,
+                    shape: const RoundedRectangleBorder(
+                      borderRadius: BorderRadius.vertical(bottom: Radius.circular(18)),
+                    ),
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 2),
+                    leading: Container(
+                      width: 40,
+                      height: 40,
+                      decoration: BoxDecoration(
+                        color: AppColors.mintAccent,
+                        shape: BoxShape.circle,
+                      ),
+                      child: const Icon(
+                        Icons.backpack,
+                        color: Colors.green,
+                        size: 22,
+                      ),
+                    ),
+                    title: Text(
+                      'Checklist Tas Siaga',
+                      style: GoogleFonts.plusJakartaSans(
+                        fontSize: 16.0 * _textScaleMultiplier,
+                        fontWeight: FontWeight.w800,
+                        color: AppColors.primaryDarkest,
+                      ),
+                    ),
+                    subtitle: Text(
+                      'Persiapkan barang darurat Anda',
+                      style: GoogleFonts.plusJakartaSans(
+                        fontSize: 12.5 * _textScaleMultiplier,
+                        color: AppColors.textSlate,
+                      ),
+                    ),
+                    trailing: const Icon(
+                      Icons.chevron_right_rounded,
+                      color: AppColors.textSlate,
+                      size: 24,
+                    ),
+                    onTap: () {
+                      showModalBottomSheet(
+                        context: context,
+                        shape: const RoundedRectangleBorder(
+                          borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+                        ),
+                        builder: (context) => const ChecklistTasSiagaSheet(),
+                      );
+                    },
+                  ),
+                ),
               ],
             ),
 
-            const SizedBox(height: 18),
+            const SizedBox(height: 10),
 
             // ==========================================
             // SEKSI 2: AKSESIBILITAS & EVAKUASI (Sangat Penting)
@@ -1122,7 +1180,7 @@ class _PengaturanScreenState extends State<PengaturanScreen> {
               ],
             ),
 
-            const SizedBox(height: 18),
+            const SizedBox(height: 10),
 
             // ==========================================
             // SEKSI 3: DATA OFFLINE & PRIVASI

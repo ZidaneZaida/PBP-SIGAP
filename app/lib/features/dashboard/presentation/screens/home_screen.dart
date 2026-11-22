@@ -5,16 +5,33 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:sigap/core/navigation/sigap_transitions.dart';
 import 'package:sigap/core/theme/app_colors.dart';
 import 'package:sigap/features/alerts/presentation/screens/peringatan_screen.dart';
+import 'package:sigap/features/evacuation/presentation/screens/evacuation_guide_screen.dart';
 import 'package:sigap/features/family/presentation/screens/keluarga_screen.dart';
 import 'package:sigap/features/map/presentation/screens/peta_screen.dart';
 import 'package:sigap/features/settings/presentation/screens/pengaturan_screen.dart';
 import 'package:sigap/features/profile/presentation/screens/profile_screen.dart';
+import 'package:sigap/features/vision/presentation/widgets/sigap_vision_home_card.dart';
+
+/// Menghitung estimasi waktu tiba gelombang tsunami (*Golden Time*) dalam menit
+/// berdasarkan rumus Revisi Zidan v2.1-Finalized Bagian 7.2:
+/// `Estimasi (menit) = Jarak (km) / 700 (km/jam) * 60`.
+///
+/// Disiapkan agar langsung dapat dipakai ketika data gempa BMKG real-time
+/// dari proxy backend (BE-02) sudah terhubung.
+double calculateGoldenTimeMinutes(double distanceKm) {
+  if (distanceKm <= 0) return 0.0;
+  return (distanceKm / 700.0) * 60.0;
+}
 
 /// Screen Utama HomeScreen (Beranda/Dashboard) SIGAP Kota Padang.
 ///
 /// Memiliki logika kondisi (State Management) yang merender UI berbeda
 /// antara "Kondisi Aman" (Normal) dan "Kondisi Darurat" (Bencana Aktif).
 class HomeScreen extends StatefulWidget {
+  static const int defaultGoldenTimeSeconds = 20 * 60; // 20:00 (20 menit)
+  static const String goldenTimeDisclaimerText =
+      'Estimasi perkiraan waktu tiba tsunami, bukan peringatan resmi BMKG.';
+
   final String userName;
   final bool initialEmergencyState;
   final bool initialTsunamiWarning;
@@ -36,6 +53,10 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
   // Dynamic State Management: Kondisi Aman vs Kondisi Darurat
   late bool _isEmergency;
   late bool _hasTsunamiWarning;
+
+  // Golden Time Countdown (Revisi Zidan Bagian 2.2.A & 7.2)
+  int _goldenTimeSecondsRemaining = HomeScreen.defaultGoldenTimeSeconds;
+  Timer? _goldenTimeTimer;
 
   // Interaktivitas & Status Pengguna
   bool _isSpeakingTts = false;
@@ -61,13 +82,59 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
     _pulseAnimation = Tween<double>(begin: 0.85, end: 1.05).animate(
       CurvedAnimation(parent: _pulseController, curve: Curves.easeInOut),
     );
+
+    _syncGoldenTimeTimer(resetDuration: true);
   }
 
   @override
   void dispose() {
+    _goldenTimeTimer?.cancel();
+    _goldenTimeTimer = null;
     _ttsSimulationTimer?.cancel();
     _pulseController.dispose();
     super.dispose();
+  }
+
+  void _syncGoldenTimeTimer({bool resetDuration = false}) {
+    _goldenTimeTimer?.cancel();
+    _goldenTimeTimer = null;
+
+    if (!_isEmergency || !_hasTsunamiWarning) {
+      return;
+    }
+
+    if (resetDuration || _goldenTimeSecondsRemaining <= 0) {
+      _goldenTimeSecondsRemaining = HomeScreen.defaultGoldenTimeSeconds;
+    }
+
+    _goldenTimeTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
+      if (!mounted || !_isEmergency || !_hasTsunamiWarning) {
+        timer.cancel();
+        if (_goldenTimeTimer == timer) {
+          _goldenTimeTimer = null;
+        }
+        return;
+      }
+
+      if (_goldenTimeSecondsRemaining <= 1) {
+        timer.cancel();
+        _goldenTimeTimer = null;
+        setState(() {
+          _goldenTimeSecondsRemaining = 0;
+        });
+      } else {
+        setState(() {
+          _goldenTimeSecondsRemaining -= 1;
+        });
+      }
+    });
+  }
+
+  String _formatGoldenTime(int totalSeconds) {
+    final safeSeconds = totalSeconds < 0 ? 0 : totalSeconds;
+    final minutes = (safeSeconds ~/ 60).toString().padLeft(2, '0');
+    final seconds = (safeSeconds % 60).toString().padLeft(2, '0');
+    return '$minutes:$seconds';
   }
 
   void _toggleEmergencyState() {
@@ -80,6 +147,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
         _ttsSimulationTimer?.cancel();
       }
     });
+    _syncGoldenTimeTimer(resetDuration: _isEmergency);
 
     ScaffoldMessenger.of(context).clearSnackBars();
     ScaffoldMessenger.of(context).showSnackBar(
@@ -102,6 +170,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
     setState(() {
       _hasTsunamiWarning = !_hasTsunamiWarning;
     });
+    _syncGoldenTimeTimer(resetDuration: _hasTsunamiWarning);
   }
 
   void _toggleSpeakAlert() {
@@ -492,6 +561,166 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
     setState(() => _activeBottomNavIndex = index);
   }
 
+  /// Navigasi ke panduan evakuasi cerdas tsunami & shelter TES (FE-07).
+  void _openEvacuationGuide() {
+    HapticFeedback.heavyImpact();
+    Navigator.of(context).push(
+      SigapRoutes.slideRight(
+        EvacuationGuideScreen(
+          initialRemainingSeconds: _goldenTimeSecondsRemaining,
+        ),
+      ),
+    );
+  }
+
+  /// Membuka akses Suar SOS Offline darurat.
+  /// Sementara menampilkan bottom sheet darurat dengan informasi jujur terkait
+  /// jadwal FE-09 (BLE Beacon & strobo Morse) beserta akses cepat fitur darurat
+  /// yang sudah tersedia; pada FE-09 akan diganti menuju `EmergencyBeaconScreen`.
+  void _openOfflineSosBeacon() {
+    HapticFeedback.heavyImpact();
+    showSigapModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      builder: (ctx) => Container(
+        decoration: const BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+        ),
+        padding: const EdgeInsets.fromLTRB(22, 16, 22, 24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Center(
+              child: Container(
+                width: 44,
+                height: 5,
+                decoration: BoxDecoration(
+                  color: AppColors.borderLight,
+                  borderRadius: BorderRadius.circular(10),
+                ),
+              ),
+            ),
+            const SizedBox(height: 16),
+            Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(10),
+                  decoration: const BoxDecoration(
+                    color: Color(0xFFFEE2E2),
+                    shape: BoxShape.circle,
+                  ),
+                  child: const Icon(
+                    Icons.sensors_rounded,
+                    color: Color(0xFFDC2626),
+                    size: 26,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Akses Suar SOS Offline',
+                        style: GoogleFonts.plusJakartaSans(
+                          fontSize: 17.5,
+                          fontWeight: FontWeight.w900,
+                          color: const Color(0xFF991B1B),
+                        ),
+                      ),
+                      Text(
+                        'Persiapan Mode Darurat Tanpa Sinyal',
+                        style: GoogleFonts.plusJakartaSans(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                          color: AppColors.textSlate,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 14),
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: const Color(0xFFFFFBEB),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: const Color(0xFFFDE68A)),
+              ),
+              child: Text(
+                'Mode pemancar BLE Beacon & senter strobo Morse penuh masih dalam tahap pengembangan (FE-09) dan belum aktif pada versi ini. Gunakan tindakan darurat berikut untuk segera meminta bantuan:',
+                style: GoogleFonts.plusJakartaSans(
+                  fontSize: 12.5,
+                  fontWeight: FontWeight.w600,
+                  color: const Color(0xFF78350F),
+                  height: 1.45,
+                ),
+              ),
+            ),
+            const SizedBox(height: 16),
+            SizedBox(
+              width: double.infinity,
+              height: 48,
+              child: ElevatedButton.icon(
+                onPressed: () {
+                  Navigator.of(ctx).pop();
+                  _triggerSiren();
+                },
+                icon: const Icon(Icons.campaign_rounded),
+                label: Text(
+                  'Buka Sirine SOS Darurat',
+                  style: GoogleFonts.plusJakartaSans(
+                    fontWeight: FontWeight.w800,
+                    fontSize: 13.5,
+                  ),
+                ),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFFDC2626),
+                  foregroundColor: Colors.white,
+                  elevation: 0,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(14),
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(height: 10),
+            SizedBox(
+              width: double.infinity,
+              height: 48,
+              child: OutlinedButton.icon(
+                onPressed: () {
+                  Navigator.of(ctx).pop();
+                  _callEmergency112();
+                },
+                icon: const Icon(Icons.phone_in_talk_rounded),
+                label: Text(
+                  'Hubungi Kontak Darurat 112 / BPBD',
+                  style: GoogleFonts.plusJakartaSans(
+                    fontWeight: FontWeight.w800,
+                    fontSize: 13.5,
+                  ),
+                ),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: AppColors.primaryDark,
+                  side: const BorderSide(color: AppColors.primary, width: 1.3),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(14),
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   String _getInitials(String name) {
     final clean = name.trim();
     if (clean.isEmpty) return 'WP';
@@ -504,13 +733,18 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
 
   @override
   Widget build(BuildContext context) {
+    final bool isEmergencyHomeVisual =
+        _isEmergency && _activeBottomNavIndex == 0;
+
     return Scaffold(
-      backgroundColor: AppColors.backgroundCream,
+      backgroundColor: isEmergencyHomeVisual
+          ? const Color(0xFF450A0A) // Mode kontras tinggi waspada darurat
+          : AppColors.backgroundCream,
       body: SafeArea(
         child: Column(
           children: [
             // Header Pengguna (Profil sederhana, TANPA jam statis) - DIAM/STATIS
-            _buildHeader(),
+            _buildHeader(isHighContrastEmergency: isEmergencyHomeVisual),
 
             // Area tengah (Body) berganti layar dengan animasi Fade-Through & State Preservation
             Expanded(
@@ -555,10 +789,25 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
             _buildSafeEducationBanner(),
           ],
 
+          // 1c. MODE DARURAT: GOLDEN TIME COUNTDOWN & 2 TOMBOL DARURAT RAKSASA (FE-06)
+          if (_isEmergency) ...[
+            if (_hasTsunamiWarning) ...[
+              const SizedBox(height: 14),
+              _buildGoldenTimeCountdownCard(),
+            ],
+            const SizedBox(height: 14),
+            _buildEmergencyGiantButtons(),
+          ],
+
           const SizedBox(height: 18),
 
           // 2. GRID 2x2 TINDAKAN CEPAT (Quick Actions)
           _buildQuickActionsGrid(),
+
+          const SizedBox(height: 18),
+
+          // 2b. AKSES SIGAP-VISION — PINDAI KERUSAKAN BANGUNAN
+          const SigapVisionHomeCard(),
 
           const SizedBox(height: 22),
 
@@ -602,14 +851,28 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
   // ==========================================
   // HEADER PENGGUNA (Tanpa Jam Statis)
   // ==========================================
-  Widget _buildHeader() {
+  Widget _buildHeader({bool isHighContrastEmergency = false}) {
+    final headerBg = isHighContrastEmergency
+        ? const Color(0xFF7F1D1D)
+        : AppColors.backgroundCream;
+    final headerBorder = isHighContrastEmergency
+        ? const Color(0xFFEF4444).withValues(alpha: 0.55)
+        : AppColors.borderLight.withValues(alpha: 0.6);
+    final titleColor =
+        isHighContrastEmergency ? Colors.white : AppColors.primaryDarkest;
+    final subtitleColor = isHighContrastEmergency
+        ? const Color(0xFFFECACA)
+        : AppColors.textSlate;
+    final iconColor =
+        isHighContrastEmergency ? Colors.white : AppColors.primaryDark;
+
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
       decoration: BoxDecoration(
-        color: AppColors.backgroundCream,
+        color: headerBg,
         border: Border(
           bottom: BorderSide(
-            color: AppColors.borderLight.withValues(alpha: 0.6),
+            color: headerBorder,
             width: 1,
           ),
         ),
@@ -626,7 +889,9 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
             },
             child: CircleAvatar(
               radius: 21,
-              backgroundColor: AppColors.primaryDark,
+              backgroundColor: isHighContrastEmergency
+                  ? const Color(0xFFDC2626)
+                  : AppColors.primaryDark,
               child: Text(
                 _getInitials(widget.userName),
                 style: GoogleFonts.plusJakartaSans(
@@ -650,7 +915,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
                   style: GoogleFonts.plusJakartaSans(
                     fontSize: 17,
                     fontWeight: FontWeight.w800,
-                    color: AppColors.primaryDarkest,
+                    color: titleColor,
                   ),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
@@ -658,10 +923,12 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
                 const SizedBox(height: 2),
                 Row(
                   children: [
-                    const Icon(
+                    Icon(
                       Icons.location_on_rounded,
                       size: 13,
-                      color: AppColors.primary,
+                      color: isHighContrastEmergency
+                          ? const Color(0xFFFCA5A5)
+                          : AppColors.primary,
                     ),
                     const SizedBox(width: 3),
                     Text(
@@ -669,7 +936,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
                       style: GoogleFonts.plusJakartaSans(
                         fontSize: 11.5,
                         fontWeight: FontWeight.w500,
-                        color: AppColors.textSlate,
+                        color: subtitleColor,
                       ),
                     ),
                   ],
@@ -720,7 +987,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
 
           // Pengaturan Icon
           IconButton(
-            icon: const Icon(Icons.settings_outlined, color: AppColors.primaryDark, size: 22),
+            icon: Icon(Icons.settings_outlined, color: iconColor, size: 22),
             onPressed: () {
               Navigator.push(
                 context,
@@ -1224,6 +1491,196 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
   }
 
   // ==========================================
+  // 1c. GOLDEN TIME COUNTDOWN & TOMBOL DARURAT RAKSASA (FE-06)
+  // ==========================================
+  Widget _buildGoldenTimeCountdownCard() {
+    return Container(
+      key: const ValueKey('golden_time_countdown_card'),
+      width: double.infinity,
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        gradient: const LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [
+            Color(0xFF991B1B),
+            Color(0xFFC2410C),
+          ],
+        ),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(
+          color: const Color(0xFFFCA5A5),
+          width: 1.5,
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.25),
+            blurRadius: 12,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: Colors.white.withValues(alpha: 0.18),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: const Icon(
+                  Icons.timer_outlined,
+                  color: Colors.white,
+                  size: 24,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'GOLDEN TIME EVAKUASI TSUNAMI',
+                      style: GoogleFonts.plusJakartaSans(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w900,
+                        color: const Color(0xFFFEE2E2),
+                        letterSpacing: 0.5,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      'Segera menjauh dari pesisir Kota Padang',
+                      style: GoogleFonts.plusJakartaSans(
+                        fontSize: 12.5,
+                        fontWeight: FontWeight.w600,
+                        color: Colors.white,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 14,
+                  vertical: 8,
+                ),
+                decoration: BoxDecoration(
+                  color: Colors.black.withValues(alpha: 0.35),
+                  borderRadius: BorderRadius.circular(14),
+                  border: Border.all(
+                    color: Colors.white.withValues(alpha: 0.35),
+                  ),
+                ),
+                child: Text(
+                  _formatGoldenTime(_goldenTimeSecondsRemaining),
+                  style: GoogleFonts.plusJakartaSans(
+                    fontSize: 26,
+                    fontWeight: FontWeight.w900,
+                    color: Colors.white,
+                    letterSpacing: 1.0,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+            decoration: BoxDecoration(
+              color: Colors.black.withValues(alpha: 0.22),
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: Text(
+              HomeScreen.goldenTimeDisclaimerText,
+              style: GoogleFonts.plusJakartaSans(
+                fontSize: 11.5,
+                fontWeight: FontWeight.w600,
+                color: const Color(0xFFFEF3C7),
+                height: 1.35,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildEmergencyGiantButtons() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        // Tombol Darurat Raksasa 1: PANDUAN EVAKUASI KE SHELTER TES
+        SizedBox(
+          width: double.infinity,
+          height: 58,
+          child: ElevatedButton.icon(
+            onPressed: _openEvacuationGuide,
+            icon: const Icon(Icons.directions_run_rounded, size: 24),
+            label: Text(
+              'PANDUAN EVAKUASI KE SHELTER TES',
+              textAlign: TextAlign.center,
+              style: GoogleFonts.plusJakartaSans(
+                fontSize: 14,
+                fontWeight: FontWeight.w900,
+                letterSpacing: 0.3,
+              ),
+            ),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFF15803D),
+              foregroundColor: Colors.white,
+              elevation: 3,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(16),
+                side: BorderSide(
+                  color: Colors.white.withValues(alpha: 0.4),
+                  width: 1.2,
+                ),
+              ),
+            ),
+          ),
+        ),
+        const SizedBox(height: 10),
+
+        // Tombol Darurat Raksasa 2: AKTIFKAN SUAR SOS OFFLINE
+        SizedBox(
+          width: double.infinity,
+          height: 58,
+          child: ElevatedButton.icon(
+            onPressed: _openOfflineSosBeacon,
+            icon: const Icon(Icons.sensors_rounded, size: 24),
+            label: Text(
+              'AKTIFKAN SUAR SOS OFFLINE',
+              textAlign: TextAlign.center,
+              style: GoogleFonts.plusJakartaSans(
+                fontSize: 14,
+                fontWeight: FontWeight.w900,
+                letterSpacing: 0.3,
+              ),
+            ),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFFEA580C),
+              foregroundColor: Colors.white,
+              elevation: 3,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(16),
+                side: BorderSide(
+                  color: Colors.white.withValues(alpha: 0.4),
+                  width: 1.2,
+                ),
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  // ==========================================
   // 2. GRID 2x2 TINDAKAN CEPAT (Quick Actions)
   // ==========================================
   Widget _buildQuickActionsGrid() {
@@ -1235,7 +1692,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
           style: GoogleFonts.plusJakartaSans(
             fontSize: 15,
             fontWeight: FontWeight.w800,
-            color: AppColors.primaryDarkest,
+            color: _isEmergency ? Colors.white : AppColors.primaryDarkest,
           ),
         ),
         const SizedBox(height: 10),

@@ -181,9 +181,19 @@ void main() {
       await tester.tap(find.text('Bacakan Arahan').first);
       await tester.pump(const Duration(milliseconds: 100));
 
-      // 5. TAB 2: UJI BUKU SAKU (Offline Guide)
+      // 5. TAB 2: UJI BUKU SAKU (Offline Guide & BukuSakuSheet TTS Modal)
       await tester.tap(find.text('📖 Buku Saku'));
       await tester.pump(const Duration(milliseconds: 200));
+
+      // Verifikasi BukuSakuSheet Modal Bottom Sheet
+      expect(find.text('Buku Saku Darurat'), findsOneWidget);
+      expect(find.text('Panduan Gempa'), findsOneWidget);
+      expect(find.text('Panduan Tsunami'), findsOneWidget);
+      expect(find.byIcon(Icons.volume_up), findsNWidgets(2));
+
+      // Tutup BukuSakuSheet
+      Navigator.of(tester.element(find.text('Buku Saku Darurat'))).pop();
+      await tester.pump(const Duration(milliseconds: 300));
 
       // Verifikasi 4 Panduan Edukasi Sederhana
       expect(find.text('Panduan Saat Gempa'), findsOneWidget);
@@ -590,6 +600,9 @@ void main() {
 
       // Switch ke sub-tab "📖 Buku Saku" di Peringatan
       await tester.tap(find.text('📖 Buku Saku'));
+      await tester.pump(const Duration(milliseconds: 300));
+      expect(find.text('Buku Saku Darurat'), findsOneWidget);
+      Navigator.of(tester.element(find.text('Buku Saku Darurat'))).pop();
       await tester.pump(const Duration(milliseconds: 300));
       expect(find.text('Panduan Saat Gempa'), findsOneWidget);
 
