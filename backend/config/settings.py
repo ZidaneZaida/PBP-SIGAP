@@ -84,10 +84,10 @@ ASGI_APPLICATION = "config.asgi.application"
 # Database — Supavisor session pooler (IPv4-compatible)
 # --------------------------------------------------------------------------
 DATABASES = {
-    "default": env.db(
-        "DATABASE_URL",
-        default="postgres://postgres:postgres@127.0.0.1:5432/sigap",
-    )
+    "default": {
+        "ENGINE": "django.db.backends.sqlite3",
+        "NAME": BASE_DIR / "db.sqlite3",
+    }
 }
 
 if DATABASES["default"]["ENGINE"] == "django.db.backends.sqlite3":
