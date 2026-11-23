@@ -919,6 +919,23 @@ class _PetaScreenState extends State<PetaScreen>
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
+          // Tombol Titik Kumpul Keluarga
+          FloatingActionButton.small(
+            heroTag: 'family_meeting_point_btn',
+            backgroundColor: Colors.green,
+            foregroundColor: Colors.white,
+            onPressed: () {
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                  content: Text('Menampilkan rute ke Titik Kumpul Keluarga...'),
+                ),
+              );
+            },
+            elevation: 4,
+            child: const Icon(Icons.family_restroom, size: 20),
+          ),
+          const SizedBox(height: 8),
+
           // Tombol Pusatkan ke Lokasi Pengguna ("My Location")
           FloatingActionButton.small(
             heroTag: 'my_location_btn',

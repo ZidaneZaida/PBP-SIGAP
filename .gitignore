@@ -22,3 +22,16 @@ db.sqlite3
 *.log
 backend/server-django
 .vscode
+
+# Root Flutter & build artifacts (project is in app/)
+.dart_tool/
+.flutter-plugins-dependencies
+build/
+.git.zip
+android/
+ios/
+macos/
+windows/
+linux/
+web/
+

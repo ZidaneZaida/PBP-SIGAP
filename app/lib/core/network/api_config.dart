@@ -29,5 +29,10 @@ class ApiConfig {
   // Family endpoints
   static const String familyGroups = '/api/family/groups/';
   static const String familyJoin = '/api/family/join/';
+
+  // SIGAP-Vision / Damage Assessment endpoints (Revisi Zidan v2.1-Finalized)
+  static const String damageReports = '/api/damage-reports/';
+  static const String myDamageReports = '/api/damage-reports/my/';
+  static const String damageReportsHeatmap = '/api/damage-reports/heatmap/';
 }
 

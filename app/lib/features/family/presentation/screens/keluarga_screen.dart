@@ -80,6 +80,7 @@ class _KeluargaScreenState extends State<KeluargaScreen> {
   FamilySafetyStatus _mySafetyStatus = FamilySafetyStatus.aman;
   String _myStatusNote = '🟢 AMAN (Update 2 mnt lalu)';
   String _myStatusLocation = 'Dekat Kantor Camat Padang Barat';
+  String titikKumpul = "Belum diatur";
 
   // Daftar Anggota Keluarga (Contoh Data Padang)
   final List<FamilyMember> _familyMembers = [
@@ -1030,66 +1031,73 @@ class _KeluargaScreenState extends State<KeluargaScreen> {
               await Future.delayed(const Duration(milliseconds: 500));
               if (mounted) setState(() {});
             },
-            child: ListView(
+            child: SingleChildScrollView(
               physics: const AlwaysScrollableScrollPhysics(
                 parent: BouncingScrollPhysics(),
               ),
               padding: const EdgeInsets.fromLTRB(18, 12, 18, 90),
-              children: [
-                // Sub-header ringkas
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Row(
-                      children: [
-                        const Icon(
-                          Icons.people_alt_rounded,
-                          size: 18,
-                          color: AppColors.primaryDark,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  // CARD TITIK KUMPUL KELUARGA
+                  _buildTitikKumpulCard(),
+                  const SizedBox(height: 12),
+
+                  // Sub-header ringkas
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Row(
+                        children: [
+                          const Icon(
+                            Icons.people_alt_rounded,
+                            size: 18,
+                            color: AppColors.primaryDark,
+                          ),
+                          const SizedBox(width: 6),
+                          Text(
+                            'Anggota Keluarga Terhubung (${_familyMembers.length})',
+                            style: GoogleFonts.plusJakartaSans(
+                              fontSize: 13.5,
+                              fontWeight: FontWeight.w800,
+                              color: AppColors.primaryDarkest,
+                            ),
+                          ),
+                        ],
+                      ),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                        decoration: BoxDecoration(
+                          color: AppColors.mintAccent,
+                          borderRadius: BorderRadius.circular(12),
                         ),
-                        const SizedBox(width: 6),
-                        Text(
-                          'Anggota Keluarga Terhubung (${_familyMembers.length})',
+                        child: Text(
+                          'Sinyal Darurat 🟢',
                           style: GoogleFonts.plusJakartaSans(
-                            fontSize: 13.5,
-                            fontWeight: FontWeight.w800,
-                            color: AppColors.primaryDarkest,
+                            fontSize: 10.5,
+                            fontWeight: FontWeight.w700,
+                            color: AppColors.primaryDark,
                           ),
                         ),
-                      ],
-                    ),
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                      decoration: BoxDecoration(
-                        color: AppColors.mintAccent,
-                        borderRadius: BorderRadius.circular(12),
                       ),
-                      child: Text(
-                        'Sinyal Darurat 🟢',
-                        style: GoogleFonts.plusJakartaSans(
-                          fontSize: 10.5,
-                          fontWeight: FontWeight.w700,
-                          color: AppColors.primaryDark,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 10),
+                    ],
+                  ),
+                  const SizedBox(height: 10),
 
-                // 2. DAFTAR ANGGOTA KELUARGA (Vertical List)
-                ..._familyMembers.map((member) => _buildFamilyCard(member)),
+                  // 2. DAFTAR ANGGOTA KELUARGA (Vertical List)
+                  ..._familyMembers.map((member) => _buildFamilyCard(member)),
 
-                const SizedBox(height: 14),
+                  const SizedBox(height: 14),
 
-                // KARTU TAMBAH KELUARGA (Di akhir list)
-                _buildAddFamilyCard(),
+                  // KARTU TAMBAH KELUARGA (Di akhir list)
+                  _buildAddFamilyCard(),
 
-                const SizedBox(height: 18),
+                  const SizedBox(height: 18),
 
-                // Edukasi Singkat Jaringan Darurat
-                _buildOfflineNoticeBanner(),
-              ],
+                  // Edukasi Singkat Jaringan Darurat
+                  _buildOfflineNoticeBanner(),
+                ],
+              ),
             ),
           ),
         ),
@@ -1357,6 +1365,115 @@ class _KeluargaScreenState extends State<KeluargaScreen> {
           ),
         ],
       ),
+    );
+  }
+
+  // ==========================================
+  // CARD & MODAL TITIK KUMPUL KELUARGA
+  // ==========================================
+  Widget _buildTitikKumpulCard() {
+    return Card(
+      color: AppColors.mintAccent.withValues(alpha: 0.6),
+      elevation: 0,
+      margin: EdgeInsets.zero,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(16),
+        side: BorderSide(color: AppColors.borderLight.withValues(alpha: 0.8)),
+      ),
+      child: ListTile(
+        leading: const Icon(Icons.location_on, color: Colors.red),
+        title: Text(
+          'Titik Kumpul Keluarga',
+          style: GoogleFonts.plusJakartaSans(
+            fontSize: 14,
+            fontWeight: FontWeight.w800,
+            color: AppColors.primaryDarkest,
+          ),
+        ),
+        subtitle: Text(
+          titikKumpul,
+          style: GoogleFonts.plusJakartaSans(
+            fontSize: 12.5,
+            fontWeight: FontWeight.w600,
+            color: AppColors.textSlate,
+          ),
+        ),
+        trailing: ElevatedButton(
+          onPressed: _showPilihTitikKumpulModal,
+          style: ElevatedButton.styleFrom(
+            backgroundColor: AppColors.primaryDark,
+            foregroundColor: Colors.white,
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+            minimumSize: const Size(60, 32),
+            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+            elevation: 0,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(10),
+            ),
+          ),
+          child: Text(
+            'Atur',
+            style: GoogleFonts.plusJakartaSans(
+              fontSize: 12,
+              fontWeight: FontWeight.w700,
+              color: Colors.white,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _showPilihTitikKumpulModal() {
+    final List<String> daftarLokasi = [
+      'Masjid Raya Sumbar',
+      'Gedung TES UNP',
+      'Kantor BPBD Padang',
+    ];
+
+    showModalBottomSheet(
+      context: context,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (context) {
+        return Container(
+          padding: const EdgeInsets.all(20),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Pilih Titik Kumpul Keluarga',
+                style: GoogleFonts.plusJakartaSans(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w800,
+                  color: AppColors.primaryDarkest,
+                ),
+              ),
+              const SizedBox(height: 12),
+              ...daftarLokasi.map(
+                (lokasi) => ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  leading: const Icon(Icons.location_on, color: Colors.red),
+                  title: Text(
+                    lokasi,
+                    style: GoogleFonts.plusJakartaSans(
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  onTap: () {
+                    setState(() {
+                      titikKumpul = lokasi;
+                    });
+                    Navigator.pop(context);
+                  },
+                ),
+              ),
+            ],
+          ),
+        );
+      },
     );
   }
 

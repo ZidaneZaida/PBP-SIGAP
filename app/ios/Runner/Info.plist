@@ -26,6 +26,12 @@
 	<string>$(FLUTTER_BUILD_NUMBER)</string>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
+	<key>NSCameraUsageDescription</key>
+	<string>SIGAP membutuhkan akses kamera untuk memotret kondisi kerusakan bangunan pada fitur SIGAP-Vision.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>SIGAP membutuhkan akses galeri agar Anda dapat memilih foto bangunan untuk diperiksa melalui SIGAP-Vision.</string>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>SIGAP dapat mencatat koordinat lokasi bangunan secara opsional pada laporan kerusakan lokal Anda.</string>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>

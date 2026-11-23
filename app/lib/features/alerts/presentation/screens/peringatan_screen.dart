@@ -9,6 +9,7 @@ import 'package:sigap/features/family/presentation/screens/keluarga_screen.dart'
 import 'package:sigap/features/map/presentation/screens/peta_screen.dart';
 import 'package:sigap/features/settings/presentation/screens/pengaturan_screen.dart';
 import 'package:sigap/features/profile/presentation/screens/profile_screen.dart';
+import 'package:sigap/widgets/buku_saku_sheet.dart';
 
 /// Screen Utama Tab Peringatan (PeringatanScreen) SIGAP Kota Padang.
 ///
@@ -400,6 +401,15 @@ class _PeringatanScreenState extends State<PeringatanScreen> with SingleTickerPr
               onTap: () {
                 HapticFeedback.selectionClick();
                 setState(() => _selectedTabIndex = 1);
+                showModalBottomSheet(
+                  context: context,
+                  shape: const RoundedRectangleBorder(
+                    borderRadius: BorderRadius.vertical(
+                      top: Radius.circular(20),
+                    ),
+                  ),
+                  builder: (context) => const BukuSakuSheet(),
+                );
               },
               child: AnimatedContainer(
                 duration: const Duration(milliseconds: 200),

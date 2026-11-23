@@ -1,8 +1,10 @@
 import 'dart:async';
 import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
+
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/services/bmkg_service.dart';
 import '../../../auth/presentation/screens/register_screen.dart';
@@ -46,7 +48,8 @@ class SplashScreen extends StatefulWidget {
   State<SplashScreen> createState() => _SplashScreenState();
 }
 
-class _SplashScreenState extends State<SplashScreen> with TickerProviderStateMixin {
+class _SplashScreenState extends State<SplashScreen>
+    with TickerProviderStateMixin {
   // Controller animasi intro logo, teks, dan tagline
   late AnimationController _introController;
   late Animation<double> _logoScaleAnimation;
@@ -121,15 +124,13 @@ class _SplashScreenState extends State<SplashScreen> with TickerProviderStateMix
       ),
     );
 
-    _textSlideAnimation = Tween<Offset>(
-      begin: const Offset(0.0, 0.06),
-      end: Offset.zero,
-    ).animate(
-      CurvedAnimation(
-        parent: _introController,
-        curve: const Interval(0.25, 0.80, curve: Curves.easeOutCubic),
-      ),
-    );
+    _textSlideAnimation =
+        Tween<Offset>(begin: const Offset(0.0, 0.06), end: Offset.zero).animate(
+          CurvedAnimation(
+            parent: _introController,
+            curve: const Interval(0.25, 0.80, curve: Curves.easeOutCubic),
+          ),
+        );
 
     _textFadeAnimation = Tween<double>(begin: 0.0, end: 1.0).animate(
       CurvedAnimation(
@@ -158,10 +159,7 @@ class _SplashScreenState extends State<SplashScreen> with TickerProviderStateMix
     );
 
     _progressAnimation = Tween<double>(begin: 0.0, end: 1.0).animate(
-      CurvedAnimation(
-        parent: _loadingController,
-        curve: Curves.easeInOutCubic,
-      ),
+      CurvedAnimation(parent: _loadingController, curve: Curves.easeInOutCubic),
     );
 
     _loadingController.addStatusListener((status) {
@@ -206,8 +204,7 @@ class _SplashScreenState extends State<SplashScreen> with TickerProviderStateMix
 
       if (widget.simulateEmergency == true) {
         _isEmergencyActive = true;
-        _ttsSpeechText =
-            'PERINGATAN DARURAT RESMI BMKG KOTA PADANG: Telah terjadi gempa bumi Magnitudo 5.8 di Barat Daya Kota Padang. Waspadai gempa susulan dan segera menuju shelter terdekat.';
+        _ttsSpeechText = 'PERINGATAN DARURAT RESMI BMKG KOTA PADANG: Telah terjadi gempa bumi Magnitudo 5.8 di Barat Daya Kota Padang. Waspadai gempa susulan dan segera menuju shelter terdekat.';
       }
     } catch (_) {
       // Fail-safe: abaikan error pengecekan agar aplikasi tidak pernah gagal membuka
@@ -231,32 +228,47 @@ class _SplashScreenState extends State<SplashScreen> with TickerProviderStateMix
         SystemSound.play(SystemSoundType.alert);
       } catch (_) {}
 
+      final scaffoldMessenger = ScaffoldMessenger.maybeOf(context);
+      final speechText = _ttsSpeechText;
+
       Navigator.of(context).pushReplacement(
         PageRouteBuilder(
           pageBuilder: (context, a1, a2) => DashboardScreen(
             userName: 'Warga Padang (Mode Darurat)',
+            initialEmergencyState: true,
           ),
-          transitionsBuilder: (context, a1, a2, child) => FadeTransition(opacity: a1, child: child),
+          transitionsBuilder: (context, a1, a2, child) =>
+              FadeTransition(opacity: a1, child: child),
           transitionDuration: const Duration(milliseconds: 400),
         ),
       );
 
-      // Tampilkan notifikasi suara TTS Bahasa Indonesia di Beranda
+      // Tampilkan notifikasi suara TTS Bahasa Indonesia di Beranda secara aman
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        final scaffoldMessenger = ScaffoldMessenger.maybeOf(context);
-        if (scaffoldMessenger != null && _ttsSpeechText.isNotEmpty) {
+        if (scaffoldMessenger != null &&
+            scaffoldMessenger.mounted &&
+            speechText.isNotEmpty) {
           scaffoldMessenger.showSnackBar(
             SnackBar(
               duration: const Duration(seconds: 8),
               backgroundColor: AppColors.alertRust,
               behavior: SnackBarBehavior.floating,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
               content: Row(
                 children: [
                   Container(
                     padding: const EdgeInsets.all(6),
-                    decoration: const BoxDecoration(color: Colors.white, shape: BoxShape.circle),
-                    child: const Icon(Icons.volume_up_rounded, color: AppColors.alertRust, size: 22),
+                    decoration: const BoxDecoration(
+                      color: Colors.white,
+                      shape: BoxShape.circle,
+                    ),
+                    child: const Icon(
+                      Icons.volume_up_rounded,
+                      color: AppColors.alertRust,
+                      size: 22,
+                    ),
                   ),
                   const SizedBox(width: 12),
                   Expanded(
@@ -274,7 +286,7 @@ class _SplashScreenState extends State<SplashScreen> with TickerProviderStateMix
                         ),
                         const SizedBox(height: 2),
                         Text(
-                          _ttsSpeechText,
+                          speechText,
                           maxLines: 2,
                           overflow: TextOverflow.ellipsis,
                           style: GoogleFonts.plusJakartaSans(
@@ -298,10 +310,10 @@ class _SplashScreenState extends State<SplashScreen> with TickerProviderStateMix
     if (widget.isUserLoggedIn) {
       Navigator.of(context).pushReplacement(
         PageRouteBuilder(
-          pageBuilder: (context, a1, a2) => DashboardScreen(
-            userName: widget.userName,
-          ),
-          transitionsBuilder: (context, a1, a2, child) => FadeTransition(opacity: a1, child: child),
+          pageBuilder: (context, a1, a2) =>
+              DashboardScreen(userName: widget.userName),
+          transitionsBuilder: (context, a1, a2, child) =>
+              FadeTransition(opacity: a1, child: child),
           transitionDuration: const Duration(milliseconds: 400),
         ),
       );
@@ -312,7 +324,8 @@ class _SplashScreenState extends State<SplashScreen> with TickerProviderStateMix
     Navigator.of(context).pushReplacement(
       PageRouteBuilder(
         pageBuilder: (context, a1, a2) => const RegisterScreen(),
-        transitionsBuilder: (context, a1, a2, child) => FadeTransition(opacity: a1, child: child),
+        transitionsBuilder: (context, a1, a2, child) =>
+            FadeTransition(opacity: a1, child: child),
         transitionDuration: const Duration(milliseconds: 400),
       ),
     );
@@ -338,9 +351,7 @@ class _SplashScreenState extends State<SplashScreen> with TickerProviderStateMix
         children: [
           // 1. Warna Latar Hijau Tua Khas SIGAP (Gradient Halus)
           Container(
-            decoration: const BoxDecoration(
-              gradient: AppColors.splashGradient,
-            ),
+            decoration: const BoxDecoration(gradient: AppColors.splashGradient),
           ),
 
           // 2. Efek Radial Ambient Glow Halus di Area Tengah
@@ -397,7 +408,8 @@ class _SplashScreenState extends State<SplashScreen> with TickerProviderStateMix
                               boxShadow: [
                                 BoxShadow(
                                   color: AppColors.mintAccent.withValues(
-                                    alpha: 0.35 + (0.25 * _glowController.value),
+                                    alpha:
+                                        0.35 + (0.25 * _glowController.value),
                                   ),
                                   blurRadius: 28,
                                   spreadRadius: 4,
@@ -509,14 +521,19 @@ class _SplashScreenState extends State<SplashScreen> with TickerProviderStateMix
                         ),
                         alignment: Alignment.centerLeft,
                         child: Container(
-                          width: math.max(6.0, trackWidth * _progressAnimation.value),
+                          width: math.max(
+                            6.0,
+                            trackWidth * _progressAnimation.value,
+                          ),
                           height: 3.0,
                           decoration: BoxDecoration(
                             color: AppColors.mintAccent,
                             borderRadius: BorderRadius.circular(1.5),
                             boxShadow: [
                               BoxShadow(
-                                color: AppColors.mintAccent.withValues(alpha: 0.45),
+                                color: AppColors.mintAccent.withValues(
+                                  alpha: 0.45,
+                                ),
                                 blurRadius: 4,
                               ),
                             ],
