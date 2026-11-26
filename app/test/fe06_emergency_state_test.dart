@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:sigap/features/beacon/presentation/screens/emergency_beacon_screen.dart';
 import 'package:sigap/features/dashboard/presentation/screens/home_screen.dart';
 import 'package:sigap/features/evacuation/presentation/screens/evacuation_guide_screen.dart';
 import 'package:sigap/features/splash/presentation/screens/splash_screen.dart';
@@ -91,7 +92,7 @@ void main() {
     );
 
     testWidgets(
-      'Menekan "AKTIFKAN SUAR SOS OFFLINE" membuka sheet akses darurat offline secara fungsional',
+      'Menekan "AKTIFKAN SUAR SOS OFFLINE" membuka layar EmergencyBeaconScreen',
       (tester) async {
         await tester.pumpWidget(
           const MaterialApp(
@@ -105,12 +106,11 @@ void main() {
         await tester.pump();
         await tester.tap(beaconBtn);
         await tester.pump();
-        await tester.pump(const Duration(milliseconds: 300));
+        await tester.pump(const Duration(milliseconds: 320));
 
-        expect(find.text('Akses Suar SOS Offline'), findsOneWidget);
-        expect(find.textContaining('FE-09'), findsOneWidget);
-        expect(find.text('Buka Sirine SOS Darurat'), findsOneWidget);
-        expect(find.text('Hubungi Kontak Darurat 112 / BPBD'), findsOneWidget);
+        expect(find.byType(EmergencyBeaconScreen), findsOneWidget);
+        expect(find.text('Suar SOS Offline'), findsOneWidget);
+        expect(find.text('AKTIFKAN SUAR SOS'), findsOneWidget);
       },
     );
 

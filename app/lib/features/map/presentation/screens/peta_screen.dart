@@ -6,10 +6,16 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:sigap/core/navigation/sigap_transitions.dart';
 import 'package:sigap/core/theme/app_colors.dart';
 import 'package:sigap/features/alerts/presentation/screens/alerts_screen.dart';
-import 'package:sigap/features/family/presentation/screens/keluarga_screen.dart';
 import 'package:sigap/features/dashboard/presentation/screens/home_screen.dart';
-import 'package:sigap/features/settings/presentation/screens/pengaturan_screen.dart';
+import 'package:sigap/features/evacuation/data/evacuation_location_service.dart';
+import 'package:sigap/features/evacuation/data/padang_evacuation_data.dart';
+import 'package:sigap/features/evacuation/domain/evacuation_decision_engine.dart';
+import 'package:sigap/features/family/presentation/screens/keluarga_screen.dart';
 import 'package:sigap/features/profile/presentation/screens/profile_screen.dart';
+import 'package:sigap/features/settings/presentation/screens/pengaturan_screen.dart';
+import 'package:sigap/features/vision/data/damage_report_repository.dart';
+import '../../data/damage_heatmap_service.dart';
+import '../../domain/damage_heatmap_point.dart';
 
 /// Model Titik Lokasi Penting di Peta Padang
 class PadangMapLocation {
@@ -40,16 +46,19 @@ class PadangMapLocation {
   });
 }
 
-/// Screen Peta Interaktif SIGAP Kota Padang
-/// Menggunakan [FlutterMap] dengan koordinat riil Kota Padang,
-/// batas kamera (Camera Boundary), Floating Search Bar,
-/// Smart Filter Chips, layer lokasi saya, dan Kartu Navigasi Darurat.
+/// Screen Peta Interaktif SIGAP Kota Padang (FE-08).
+/// Menggunakan [FlutterMap] dengan koordinat riil Kota Padang, lokasi GPS dinamis,
+/// 3 zona elevasi tsunami (Merah/Kuning/Hijau), konsistensi data shelter TES
+/// dengan [PadangEvacuationData], serta layer Heatmap Sebaran Kerusakan SIGAP-Vision.
 class PetaScreen extends StatefulWidget {
   final VoidCallback? onNavigateToDashboard;
   final VoidCallback? onNavigateToAlerts;
   final VoidCallback? onNavigateToFamily;
   final Function(int)? onTabSelected;
   final bool embedded;
+  final EvacuationLocationService? locationService;
+  final DamageReportRepository? damageReportRepository;
+  final DamageHeatmapService? heatmapService;
 
   const PetaScreen({
     super.key,
@@ -58,6 +67,9 @@ class PetaScreen extends StatefulWidget {
     this.onNavigateToFamily,
     this.onTabSelected,
     this.embedded = false,
+    this.locationService,
+    this.damageReportRepository,
+    this.heatmapService,
   });
 
   @override
@@ -68,14 +80,19 @@ class _PetaScreenState extends State<PetaScreen>
     with SingleTickerProviderStateMixin {
   final int _activeBottomNavIndex = 2; // 2: Peta Siaga (Aktif)
 
-  // Controller Peta
+  // Controller Peta & Services
   late final MapController _mapController;
+  late final EvacuationLocationService _locationService;
+  late final DamageReportRepository _damageRepository;
+  late final DamageHeatmapService _heatmapService;
 
   // Koordinat Utama Kota Padang (Latitude: -0.9471, Longitude: 100.3658)
   static const LatLng _padangCenter = LatLng(-0.9471, 100.3658);
 
-  // Lokasi Pengguna Saat Ini ("My Location" - Padang Barat dekat Air Tawar / UNP)
-  static const LatLng _userLocation = LatLng(-0.9492, 100.3542);
+  // Lokasi Pengguna Dinamis (default fallback Padang Barat konsisten dengan PadangEvacuationData)
+  LatLng _userLocation = PadangEvacuationData.defaultFallbackLocation;
+  bool _hasLiveGpsFix = false;
+  bool _isRefreshingGps = false;
 
   // Camera Boundary: Batas Geser Peta Terkunci Khusus Wilayah Padang & Sekitarnya
   final LatLngBounds _padangBounds = LatLngBounds(
@@ -86,151 +103,162 @@ class _PetaScreenState extends State<PetaScreen>
     const LatLng(-0.7600, 100.5200), // Timur Laut (Koto Tangah / Batang Anai)
   );
 
-  // Filter Kategori Aktif
-  String _selectedCategory =
-      'shelter'; // 'shelter', 'hospital', 'posko', 'tsunami'
+  // Filter Kategori Aktif: 'shelter', 'hospital', 'posko', 'tsunami', 'heatmap'
+  String _selectedCategory = 'shelter';
   final TextEditingController _searchController = TextEditingController();
 
-  // Shelter / Lokasi Terpilih untuk Bottom Sheet Navigasi
+  // Daftar lokasi fasilitas (4 shelter TES disinkronkan dari PadangEvacuationData)
+  late final List<PadangMapLocation> _locations;
+
+  // Shelter / Lokasi Terpilih untuk Kartu Navigasi Bawah
   late PadangMapLocation _selectedLocation;
   bool _isNavigating = false;
+
+  // State Layer Heatmap Kerusakan SIGAP-Vision (FE-08)
+  List<DamageHeatmapPoint> _heatmapPoints = const <DamageHeatmapPoint>[];
+  DamageHeatmapLoadResult? _heatmapLoadResult;
+  DamageHeatmapPoint? _selectedHeatmapPoint;
+  bool _isLoadingHeatmap = false;
+  bool _hasAttemptedHeatmapLoad = false;
 
   // Animasi pulsing untuk titik biru "My Location"
   late AnimationController _pulseController;
   late Animation<double> _pulseAnimation;
 
-  // Daftar Lokasi Terdata di Kota Padang
-  final List<PadangMapLocation> _locations = const [
-    // 🏃 Shelter Terdekat
-    PadangMapLocation(
-      id: 'shelter_unp',
-      name: 'Gedung TES UNP',
-      category: 'shelter',
+  static const Map<String, ({String typeLabel, String distance, String walkTime, String phone})>
+      _tesMetadata = {
+    'shelter_unp': (
       typeLabel: 'Tempat Evakuasi Sementara',
       distance: '400 meter',
       walkTime: '5 mnt jalan kaki',
-      elevation: '18 mdpl (Zona Aman Tsunami)',
-      capacity: '4.000 jiwa',
-      routeNote:
-          'Lewat Jl. Prof. Hamka langsung ke arah Timur menjauhi pantai.',
-      position: LatLng(-0.8970, 100.3520),
       phone: '(0751) 7051260',
     ),
-    PadangMapLocation(
-      id: 'shelter_ulak_karang',
-      name: 'TES Escape Building Ulak Karang',
-      category: 'shelter',
+    'shelter_ulak_karang': (
       typeLabel: 'TES Utama Mandiri',
       distance: '850 meter',
       walkTime: '10 mnt jalan kaki',
-      elevation: '16 mdpl (Aman Tsunami)',
-      capacity: '3.000 jiwa',
-      routeNote: 'Lewat Jl. Bahari lurus ke arah bukit/Utara.',
-      position: LatLng(-0.9125, 100.3530),
       phone: '(0751) 778775',
     ),
-    PadangMapLocation(
-      id: 'shelter_masjid_raya',
-      name: 'Masjid Raya Sumatera Barat',
-      category: 'shelter',
+    'shelter_masjid_raya': (
       typeLabel: 'Shelter Titik Kumpul Akbar',
       distance: '1.8 km',
       walkTime: '22 mnt jalan kaki',
-      elevation: '>15 mdpl (Zona Hijau)',
-      capacity: '10.000 jiwa',
-      routeNote:
-          'Akses cepat melalui Jl. Khatib Sulaiman jalur evakuasi utama.',
-      position: LatLng(-0.9242, 100.3625),
       phone: '(0751) 8950001',
     ),
-    PadangMapLocation(
-      id: 'shelter_smp1',
-      name: 'SMPN 1 Padang (Vertical Evac)',
-      category: 'shelter',
+    'shelter_smp1': (
       typeLabel: 'Shelter Vertikal Bertingkat',
       distance: '1.2 km',
       walkTime: '15 mnt jalan kaki',
-      elevation: 'Lt. 3 & 4 (15 mdpl)',
-      capacity: '1.500 jiwa',
-      routeNote: 'Gedung diperkuat konstruksi tahan gempa megathrust.',
-      position: LatLng(-0.9520, 100.3610),
       phone: '(0751) 21545',
     ),
+  };
 
-    // 🏥 Rumah Sakit & PMI
-    PadangMapLocation(
-      id: 'rs_djamil',
-      name: 'RSUP Dr. M. Djamil Padang',
-      category: 'hospital',
-      typeLabel: 'Rumah Sakit Rujukan Utama',
-      distance: '1.5 km',
-      walkTime: '18 mnt jalan kaki',
-      elevation: '12 mdpl',
-      capacity: 'IGD Siaga Bencana 24 Jam',
-      routeNote: 'Jl. Perintis Kemerdekaan, Padang Timur.',
-      position: LatLng(-0.9433, 100.3670),
-      phone: '(0751) 32372',
-    ),
-    PadangMapLocation(
-      id: 'rs_bhayangkara',
-      name: 'RS Bhayangkara Padang',
-      category: 'hospital',
-      typeLabel: 'Rumah Sakit Darurat Medis',
-      distance: '2.1 km',
-      walkTime: '25 mnt jalan kaki',
-      elevation: '14 mdpl',
-      capacity: 'Ambulans & Bedah Darurat',
-      routeNote: 'Jl. Jati No. 1, Padang Timur.',
-      position: LatLng(-0.9250, 100.3700),
-      phone: '(0751) 7051900',
-    ),
-    PadangMapLocation(
-      id: 'pmi_padang',
-      name: 'Markas PMI Kota Padang',
-      category: 'hospital',
-      typeLabel: 'Posko Darah & Medis PMI',
-      distance: '1.4 km',
-      walkTime: '16 mnt jalan kaki',
-      elevation: '11 mdpl',
-      capacity: 'Bank Darah & Tim Pertolongan Pertama',
-      routeNote: 'Jl. Alang Lawas Koto No. 1.',
-      position: LatLng(-0.9515, 100.3650),
-      phone: '(0751) 21102',
-    ),
+  List<PadangMapLocation> _buildPadangLocations() {
+    // 1. 4 Shelter TES langsung dari PadangEvacuationData (single source of truth dengan FE-07)
+    final shelters = PadangEvacuationData.tesShelters.map((tes) {
+      final meta = _tesMetadata[tes.id];
+      return PadangMapLocation(
+        id: tes.id,
+        name: tes.name,
+        category: 'shelter',
+        typeLabel: meta?.typeLabel ?? 'Tempat Evakuasi Sementara',
+        distance: meta?.distance ?? '1.0 km',
+        walkTime: meta?.walkTime ?? '12 mnt jalan kaki',
+        elevation: tes.elevationLabel,
+        capacity: tes.capacityLabel,
+        routeNote: tes.routeNote,
+        position: tes.latLng,
+        phone: meta?.phone ?? '112',
+      );
+    });
 
-    // ⛺ Posko Darurat
-    PadangMapLocation(
-      id: 'posko_bpbd',
-      name: 'PUSDALOPS BPBD Kota Padang',
-      category: 'posko',
-      typeLabel: 'Pusat Komando Bencana Padang',
-      distance: '2.8 km',
-      walkTime: '35 mnt jalan kaki',
-      elevation: '20 mdpl',
-      capacity: 'Pusat Distribusi Logistik & Radio Komunikasi',
-      routeNote: 'Jl. Bagindo Aziz Chan, Aie Pacah.',
-      position: LatLng(-0.9320, 100.3800),
-      phone: '(0751) 778775',
-    ),
-    PadangMapLocation(
-      id: 'posko_agus_salim',
-      name: 'Posko Lapangan GOR H. Agus Salim',
-      category: 'posko',
-      typeLabel: 'Tenda Pengungsian & Dapur Umum',
-      distance: '1.1 km',
-      walkTime: '13 mnt jalan kaki',
-      elevation: '13 mdpl',
-      capacity: '5.000 jiwa (Tenda Pengungsi)',
-      routeNote: 'Area terbuka luas aman dari reruntuhan gedung tinggi.',
-      position: LatLng(-0.9190, 100.3590),
-      phone: '112',
-    ),
-  ];
+    return <PadangMapLocation>[
+      ...shelters,
+
+      // 🏥 Rumah Sakit & PMI
+      const PadangMapLocation(
+        id: 'rs_djamil',
+        name: 'RSUP Dr. M. Djamil Padang',
+        category: 'hospital',
+        typeLabel: 'Rumah Sakit Rujukan Utama',
+        distance: '1.5 km',
+        walkTime: '18 mnt jalan kaki',
+        elevation: '12 mdpl',
+        capacity: 'IGD Siaga Bencana 24 Jam',
+        routeNote: 'Jl. Perintis Kemerdekaan, Padang Timur.',
+        position: LatLng(-0.9433, 100.3670),
+        phone: '(0751) 32372',
+      ),
+      const PadangMapLocation(
+        id: 'rs_bhayangkara',
+        name: 'RS Bhayangkara Padang',
+        category: 'hospital',
+        typeLabel: 'Rumah Sakit Darurat Medis',
+        distance: '2.1 km',
+        walkTime: '25 mnt jalan kaki',
+        elevation: '14 mdpl',
+        capacity: 'Ambulans & Bedah Darurat',
+        routeNote: 'Jl. Jati No. 1, Padang Timur.',
+        position: LatLng(-0.9250, 100.3700),
+        phone: '(0751) 7051900',
+      ),
+      const PadangMapLocation(
+        id: 'pmi_padang',
+        name: 'Markas PMI Kota Padang',
+        category: 'hospital',
+        typeLabel: 'Posko Darah & Medis PMI',
+        distance: '1.4 km',
+        walkTime: '16 mnt jalan kaki',
+        elevation: '11 mdpl',
+        capacity: 'Bank Darah & Tim Pertolongan Pertama',
+        routeNote: 'Jl. Alang Lawas Koto No. 1.',
+        position: LatLng(-0.9515, 100.3650),
+        phone: '(0751) 21102',
+      ),
+
+      // ⛺ Posko Darurat
+      const PadangMapLocation(
+        id: 'posko_bpbd',
+        name: 'PUSDALOPS BPBD Kota Padang',
+        category: 'posko',
+        typeLabel: 'Pusat Komando Bencana Padang',
+        distance: '2.8 km',
+        walkTime: '35 mnt jalan kaki',
+        elevation: '20 mdpl',
+        capacity: 'Pusat Distribusi Logistik & Radio Komunikasi',
+        routeNote: 'Jl. Bagindo Aziz Chan, Aie Pacah.',
+        position: LatLng(-0.9320, 100.3800),
+        phone: '(0751) 778775',
+      ),
+      const PadangMapLocation(
+        id: 'posko_agus_salim',
+        name: 'Posko Lapangan GOR H. Agus Salim',
+        category: 'posko',
+        typeLabel: 'Tenda Pengungsian & Dapur Umum',
+        distance: '1.1 km',
+        walkTime: '13 mnt jalan kaki',
+        elevation: '13 mdpl',
+        capacity: '5.000 jiwa (Tenda Pengungsi)',
+        routeNote: 'Area terbuka luas aman dari reruntuhan gedung tinggi.',
+        position: LatLng(-0.9190, 100.3590),
+        phone: '112',
+      ),
+    ];
+  }
 
   @override
   void initState() {
     super.initState();
     _mapController = MapController();
+    _locationService =
+        widget.locationService ?? DefaultEvacuationLocationService.instance;
+    _damageRepository =
+        widget.damageReportRepository ?? DamageReportRepository.instance;
+    _heatmapService =
+        widget.heatmapService ??
+        DefaultDamageHeatmapService(repository: _damageRepository);
+
+    _locations = _buildPadangLocations();
     _selectedLocation = _locations.first; // Default: Gedung TES UNP
 
     _pulseController = AnimationController(
@@ -241,13 +269,166 @@ class _PetaScreenState extends State<PetaScreen>
     _pulseAnimation = Tween<double>(begin: 0.6, end: 1.25).animate(
       CurvedAnimation(parent: _pulseController, curve: Curves.easeInOut),
     );
+
+    _damageRepository.reportsNotifier.addListener(_onLocalDamageReportsChanged);
+    _seedLocalHeatmapPointsFromNotifier();
+    _refreshUserLocation(moveCamera: false, showFeedback: false);
   }
 
   @override
   void dispose() {
+    _damageRepository.reportsNotifier.removeListener(
+      _onLocalDamageReportsChanged,
+    );
     _searchController.dispose();
     _pulseController.dispose();
     super.dispose();
+  }
+
+  void _seedLocalHeatmapPointsFromNotifier() {
+    final localPoints = _damageRepository.reportsNotifier.value
+        .map(DamageHeatmapPoint.fromLocalReport)
+        .whereType<DamageHeatmapPoint>()
+        .toList();
+    if (localPoints.isNotEmpty) {
+      _heatmapPoints = localPoints;
+    }
+  }
+
+  void _onLocalDamageReportsChanged() {
+    if (!mounted) return;
+    if (_selectedCategory == 'heatmap' || _hasAttemptedHeatmapLoad) {
+      _loadHeatmapData();
+    } else {
+      setState(_seedLocalHeatmapPointsFromNotifier);
+    }
+  }
+
+  Future<void> _loadHeatmapData({bool showFeedback = false}) async {
+    if (_isLoadingHeatmap) return;
+    setState(() {
+      _isLoadingHeatmap = true;
+      _hasAttemptedHeatmapLoad = true;
+    });
+
+    final result = await _heatmapService.loadHeatmapPoints();
+    if (!mounted) return;
+
+    DamageHeatmapPoint? nextSelected = _selectedHeatmapPoint;
+    if (nextSelected != null) {
+      final stillExists = result.points.any((p) => p.id == nextSelected!.id);
+      if (!stillExists) {
+        nextSelected = null;
+      }
+    }
+
+    setState(() {
+      _heatmapLoadResult = result;
+      _heatmapPoints = result.points;
+      _selectedHeatmapPoint = nextSelected;
+      _isLoadingHeatmap = false;
+    });
+
+    if (showFeedback) {
+      ScaffoldMessenger.of(context).clearSnackBars();
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          behavior: SnackBarBehavior.floating,
+          backgroundColor: result.serverAvailable
+              ? const Color(0xFF15803D)
+              : const Color(0xFF1E293B),
+          duration: const Duration(seconds: 3),
+          content: Text(
+            result.statusMessage,
+            style: GoogleFonts.plusJakartaSans(
+              fontWeight: FontWeight.w700,
+              fontSize: 12.5,
+              color: Colors.white,
+            ),
+          ),
+        ),
+      );
+    }
+  }
+
+  double _distanceMetersTo(PadangMapLocation loc) {
+    return calculateHaversineDistanceMeters(
+      _userLocation.latitude,
+      _userLocation.longitude,
+      loc.position.latitude,
+      loc.position.longitude,
+    );
+  }
+
+  /// Menampilkan jarak dinamis dari GPS nyata bila tersedia, atau nilai bawaan
+  /// bila masih dalam mode fallback awal.
+  String _displayDistanceFor(PadangMapLocation loc) {
+    if (!_hasLiveGpsFix) return loc.distance;
+    return formatEvacuationDistance(_distanceMetersTo(loc));
+  }
+
+  /// Menampilkan estimasi jalan kaki dinamis dari GPS nyata bila tersedia, atau
+  /// nilai bawaan bila masih dalam mode fallback awal.
+  String _displayWalkTimeFor(PadangMapLocation loc) {
+    if (!_hasLiveGpsFix) return loc.walkTime;
+    final eta = estimateEmergencyWalkingMinutes(_distanceMetersTo(loc));
+    if (eta <= 0.5) return '< 1 mnt jalan kaki';
+    return '${eta.ceil()} mnt jalan kaki';
+  }
+
+  Future<void> _refreshUserLocation({
+    required bool moveCamera,
+    required bool showFeedback,
+  }) async {
+    if (_isRefreshingGps) return;
+    _isRefreshingGps = true;
+
+    final result = await _locationService.fetchCurrentLocation();
+    _isRefreshingGps = false;
+    if (!mounted) return;
+
+    final bool wasLive = _hasLiveGpsFix;
+    setState(() {
+      _userLocation = result.position;
+      _hasLiveGpsFix = !result.isFallback;
+
+      // Saat pertama kali memperoleh fix GPS nyata, otomatis sorot shelter
+      // terdekat dari posisi nyata pengguna.
+      if (_hasLiveGpsFix && !wasLive && _selectedCategory == 'shelter') {
+        final shelters = _locations
+            .where((l) => l.category == 'shelter')
+            .toList()
+          ..sort((a, b) => _distanceMetersTo(a).compareTo(_distanceMetersTo(b)));
+        if (shelters.isNotEmpty) {
+          _selectedLocation = shelters.first;
+        }
+      }
+    });
+
+    if (moveCamera) {
+      _mapController.move(_userLocation, 15.0);
+    }
+
+    if (showFeedback) {
+      final latStr = _userLocation.latitude.toStringAsFixed(4);
+      final lngStr = _userLocation.longitude.toStringAsFixed(4);
+      ScaffoldMessenger.of(context).clearSnackBars();
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            _hasLiveGpsFix
+                ? '📍 Memusatkan ke Lokasi GPS Anda ($latStr, $lngStr)'
+                : '📍 GPS tidak aktif/ditolak — menampilkan lokasi perkiraan Padang Barat ($latStr, $lngStr)',
+            style: GoogleFonts.plusJakartaSans(fontWeight: FontWeight.w700),
+          ),
+          backgroundColor: _hasLiveGpsFix
+              ? const Color(0xFF2563EB)
+              : const Color(0xFFB45309),
+          duration: const Duration(seconds: 3),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    }
   }
 
   void _moveToPadangCenter() {
@@ -257,19 +438,7 @@ class _PetaScreenState extends State<PetaScreen>
 
   void _moveToMyLocation() {
     HapticFeedback.mediumImpact();
-    _mapController.move(_userLocation, 15.0);
-    ScaffoldMessenger.of(context).clearSnackBars();
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(
-          '📍 Memusatkan ke Lokasi Anda (Padang Barat · GPS Akurat)',
-          style: GoogleFonts.plusJakartaSans(fontWeight: FontWeight.w700),
-        ),
-        backgroundColor: const Color(0xFF2563EB),
-        duration: const Duration(seconds: 2),
-        behavior: SnackBarBehavior.floating,
-      ),
-    );
+    _refreshUserLocation(moveCamera: true, showFeedback: true);
   }
 
   void _zoomIn() {
@@ -294,8 +463,17 @@ class _PetaScreenState extends State<PetaScreen>
     HapticFeedback.mediumImpact();
     setState(() {
       _selectedLocation = loc;
+      _selectedHeatmapPoint = null;
     });
     _mapController.move(loc.position, 14.5);
+  }
+
+  void _selectHeatmapPoint(DamageHeatmapPoint point) {
+    HapticFeedback.mediumImpact();
+    setState(() {
+      _selectedHeatmapPoint = point;
+    });
+    _mapController.move(point.position, 15.0);
   }
 
   void _startEvacuationRoute() {
@@ -318,6 +496,7 @@ class _PetaScreenState extends State<PetaScreen>
       ),
     );
 
+    final distLabel = _displayDistanceFor(_selectedLocation);
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         backgroundColor: const Color(0xFF15803D),
@@ -332,7 +511,7 @@ class _PetaScreenState extends State<PetaScreen>
             const SizedBox(width: 12),
             Expanded(
               child: Text(
-                'Rute Evakuasi Aktif: Ikuti jalur hijau menuju ${_selectedLocation.name} (${_selectedLocation.distance})',
+                'Rute Evakuasi Aktif: Ikuti jalur hijau menuju ${_selectedLocation.name} ($distLabel)',
                 style: GoogleFonts.plusJakartaSans(
                   fontWeight: FontWeight.w700,
                   fontSize: 12.5,
@@ -390,8 +569,12 @@ class _PetaScreenState extends State<PetaScreen>
 
   // Filter lokasi berdasarkan search input dan kategori aktif
   List<PadangMapLocation> get _filteredLocations {
+    if (_selectedCategory == 'heatmap') {
+      return const <PadangMapLocation>[];
+    }
+
     final query = _searchController.text.trim().toLowerCase();
-    return _locations.where((loc) {
+    final filtered = _locations.where((loc) {
       final matchesCategory =
           _selectedCategory == 'tsunami' || loc.category == _selectedCategory;
       if (query.isEmpty) return matchesCategory;
@@ -399,6 +582,23 @@ class _PetaScreenState extends State<PetaScreen>
           (loc.name.toLowerCase().contains(query) ||
               loc.typeLabel.toLowerCase().contains(query) ||
               loc.routeNote.toLowerCase().contains(query));
+    }).toList();
+
+    if (_hasLiveGpsFix) {
+      filtered.sort(
+        (a, b) => _distanceMetersTo(a).compareTo(_distanceMetersTo(b)),
+      );
+    }
+    return filtered;
+  }
+
+  List<DamageHeatmapPoint> get _filteredHeatmapPoints {
+    final query = _searchController.text.trim().toLowerCase();
+    if (query.isEmpty) return _heatmapPoints;
+    return _heatmapPoints.where((pt) {
+      return pt.description.toLowerCase().contains(query) ||
+          pt.category.label.toLowerCase().contains(query) ||
+          pt.sourceLabel.toLowerCase().contains(query);
     }).toList();
   }
 
@@ -410,7 +610,14 @@ class _PetaScreenState extends State<PetaScreen>
         _buildInteractiveMap(),
 
         // Banner Rute Navigasi Berjalan Kaki Aktif (Jika diaktifkan)
-        if (_isNavigating) _buildActiveNavigationBanner(),
+        if (_isNavigating && _selectedCategory != 'heatmap')
+          _buildActiveNavigationBanner(),
+
+        // Legenda 3 Zona Elevasi Tsunami (Jika filter Zona Tsunami aktif)
+        if (_selectedCategory == 'tsunami') _buildTsunamiZoneLegend(),
+
+        // Banner Status Jujur Heatmap Kerusakan (Jika filter Peta Kerusakan aktif)
+        if (_selectedCategory == 'heatmap') _buildHeatmapStatusBanner(),
 
         // 2. SEARCH BAR & FILTER LOKASI (Di Atas Peta)
         _buildFloatingSearchAndFilters(),
@@ -418,8 +625,11 @@ class _PetaScreenState extends State<PetaScreen>
         // Floating Map Action Buttons (Lokasi Saya, Zoom, Pusatkan)
         _buildFloatingMapControls(),
 
-        // 3. KARTU NAVIGASI DARURAT (Draggable Bottom Sheet di Bawah Peta)
-        _buildEmergencyBottomSheet(),
+        // 3. KARTU DETAIL BAWAH (Shelter atau Detail Heatmap Kerusakan)
+        if (_selectedCategory == 'heatmap')
+          _buildHeatmapBottomCard()
+        else
+          _buildEmergencyBottomSheet(),
       ],
     );
 
@@ -432,7 +642,7 @@ class _PetaScreenState extends State<PetaScreen>
       body: SafeArea(
         child: Column(
           children: [
-            // ATURAN GLOBAL 1: HEADER STICKY / FIXED (Profil & Status Kota Padang)
+            // ATURAN GLOBAL 1: HEADER STICKY / FIXED (dengan tombol kembali bila canPop)
             _buildFixedHeader(),
 
             // AREA UTAMA PETA INTERAKTIF + FLOATING CONTROLS
@@ -450,6 +660,11 @@ class _PetaScreenState extends State<PetaScreen>
   // ATURAN GLOBAL: FIXED STICKY HEADER
   // ==========================================
   Widget _buildFixedHeader() {
+    final canPop = Navigator.of(context).canPop();
+    final subtitleText = _hasLiveGpsFix
+        ? 'GPS Aktif (${_userLocation.latitude.toStringAsFixed(4)}, ${_userLocation.longitude.toStringAsFixed(4)})'
+        : 'Padang, Sumbar · GPS Siaga Aktif';
+
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
       decoration: BoxDecoration(
@@ -463,19 +678,38 @@ class _PetaScreenState extends State<PetaScreen>
       ),
       child: Row(
         children: [
-          GestureDetector(
-            onTap: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(builder: (context) => const ProfileScreen()),
-              );
-            },
-            child: const CircleAvatar(
-              radius: 20,
-              backgroundColor: AppColors.primaryDark,
-              child: Icon(Icons.map_rounded, color: Colors.white, size: 20),
+          if (canPop)
+            IconButton(
+              key: const ValueKey('peta_back_button'),
+              tooltip: 'Kembali',
+              onPressed: () {
+                HapticFeedback.selectionClick();
+                Navigator.of(context).maybePop();
+              },
+              icon: const Icon(
+                Icons.arrow_back_rounded,
+                color: AppColors.primaryDark,
+                size: 24,
+              ),
+              padding: EdgeInsets.zero,
+              constraints: const BoxConstraints(minWidth: 40, minHeight: 40),
+            )
+          else
+            GestureDetector(
+              onTap: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => const ProfileScreen(),
+                  ),
+                );
+              },
+              child: const CircleAvatar(
+                radius: 20,
+                backgroundColor: AppColors.primaryDark,
+                child: Icon(Icons.map_rounded, color: Colors.white, size: 20),
+              ),
             ),
-          ),
           const SizedBox(width: 12),
           Expanded(
             child: Column(
@@ -495,18 +729,24 @@ class _PetaScreenState extends State<PetaScreen>
                     Container(
                       width: 7,
                       height: 7,
-                      decoration: const BoxDecoration(
-                        color: Color(0xFF10B981),
+                      decoration: BoxDecoration(
+                        color: _hasLiveGpsFix
+                            ? const Color(0xFF2563EB)
+                            : const Color(0xFF10B981),
                         shape: BoxShape.circle,
                       ),
                     ),
                     const SizedBox(width: 5),
-                    Text(
-                      'Padang, Sumbar · GPS Siaga Aktif',
-                      style: GoogleFonts.plusJakartaSans(
-                        fontSize: 11.5,
-                        fontWeight: FontWeight.w500,
-                        color: AppColors.textSlate,
+                    Expanded(
+                      child: Text(
+                        subtitleText,
+                        style: GoogleFonts.plusJakartaSans(
+                          fontSize: 11.5,
+                          fontWeight: FontWeight.w500,
+                          color: AppColors.textSlate,
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
                       ),
                     ),
                   ],
@@ -524,7 +764,7 @@ class _PetaScreenState extends State<PetaScreen>
               ScaffoldMessenger.of(context).showSnackBar(
                 SnackBar(
                   content: Text(
-                    'Layer Peta: Menampilkan kontur elevasi & shelter evakuasi Padang.',
+                    'Layer Peta: Shelter TES, 3 Zona Elevasi Tsunami, & Heatmap Kerusakan SIGAP-Vision.',
                     style: GoogleFonts.plusJakartaSans(
                       fontWeight: FontWeight.w600,
                     ),
@@ -556,6 +796,10 @@ class _PetaScreenState extends State<PetaScreen>
   // 1. WIDGET PETA INTERAKTIF SUNGGUHAN (FlutterMap)
   // ==========================================
   Widget _buildInteractiveMap() {
+    final visibleHeatmapPoints = _selectedCategory == 'heatmap'
+        ? _filteredHeatmapPoints
+        : const <DamageHeatmapPoint>[];
+
     return FlutterMap(
       mapController: _mapController,
       options: MapOptions(
@@ -582,11 +826,11 @@ class _PetaScreenState extends State<PetaScreen>
           minZoom: 11,
         ),
 
-        // Layer Zona Bahaya Tsunami (Jika filter Zona Tsunami aktif)
+        // Layer 3 Zona Elevasi Tsunami (Merah <5m, Kuning 5-10m, Hijau >15m)
         if (_selectedCategory == 'tsunami') ...[
           PolygonLayer(
             polygons: [
-              // Zona Merah Tsunami (Pesisir Pantai Padang / Muara Batang Arau s/d Jl. Veteran)
+              // 1. Zona Merah Tsunami (<5 mdpl: Pesisir Pantai Padang / Muara Batang Arau s/d Jl. Veteran)
               Polygon(
                 points: const [
                   LatLng(-0.8800, 100.3350),
@@ -603,7 +847,23 @@ class _PetaScreenState extends State<PetaScreen>
                 borderStrokeWidth: 2.5,
               ),
 
-              // Zona Hijau Aman Evakuasi (>15 mdpl: Wilayah Timur / By Pass)
+              // 2. Zona Kuning Waspada (5-10 mdpl: Zona Transisi antara pesisir dan Bypass Timur)
+              Polygon(
+                points: const [
+                  LatLng(-0.8750, 100.3450),
+                  LatLng(-0.9000, 100.3580),
+                  LatLng(-0.9400, 100.3650),
+                  LatLng(-0.9750, 100.3700),
+                  LatLng(-0.9600, 100.3950),
+                  LatLng(-0.9200, 100.3800),
+                  LatLng(-0.8800, 100.3700),
+                ],
+                color: const Color(0xFFF59E0B).withValues(alpha: 0.22),
+                borderColor: const Color(0xFFD97706),
+                borderStrokeWidth: 2.0,
+              ),
+
+              // 3. Zona Hijau Aman Evakuasi (>15 mdpl: Wilayah Timur / By Pass)
               Polygon(
                 points: const [
                   LatLng(-0.8800, 100.3700),
@@ -621,8 +881,23 @@ class _PetaScreenState extends State<PetaScreen>
           ),
         ],
 
+        // Layer Circle Heatmap Sebaran Kerusakan SIGAP-Vision (FE-08)
+        if (_selectedCategory == 'heatmap' && visibleHeatmapPoints.isNotEmpty)
+          CircleLayer(
+            circles: visibleHeatmapPoints.map((pt) {
+              return CircleMarker(
+                point: pt.position,
+                radius: pt.circleRadiusMeters,
+                useRadiusInMeter: true,
+                color: pt.overlayColor.withValues(alpha: 0.26),
+                borderColor: pt.overlayColor,
+                borderStrokeWidth: 2.0,
+              );
+            }).toList(),
+          ),
+
         // Polyline Rute Evakuasi Jalan Kaki (Ketika user menekan tombol Mulai Rute)
-        if (_isNavigating) ...[
+        if (_isNavigating && _selectedCategory != 'heatmap') ...[
           PolylineLayer(
             polylines: [
               Polyline(
@@ -644,7 +919,7 @@ class _PetaScreenState extends State<PetaScreen>
           ),
         ],
 
-        // Marker Layer: Titik Lokasi Pengguna ("My Location") & Titik Lokasi Fasilitas
+        // Marker Layer: Titik Lokasi Pengguna ("My Location"), Fasilitas, & Titik Heatmap
         MarkerLayer(
           markers: [
             // Layer "My Location" (Titik biru berkedip lokasi pengguna saat ini)
@@ -728,6 +1003,45 @@ class _PetaScreenState extends State<PetaScreen>
                             : Icons.holiday_village_rounded,
                         color: isSelected ? Colors.white : iconColor,
                         size: isSelected ? 24 : 18,
+                      ),
+                    ),
+                  ),
+                ),
+              );
+            }),
+
+            // Marker Titik Kerusakan SIGAP-Vision (Saat filter 'heatmap' aktif)
+            ...visibleHeatmapPoints.map((pt) {
+              final isSelected = _selectedHeatmapPoint?.id == pt.id;
+              return Marker(
+                point: pt.position,
+                width: isSelected ? 46 : 36,
+                height: isSelected ? 46 : 36,
+                child: GestureDetector(
+                  key: ValueKey('heatmap_marker_${pt.id}'),
+                  onTap: () => _selectHeatmapPoint(pt),
+                  child: AnimatedContainer(
+                    duration: const Duration(milliseconds: 200),
+                    decoration: BoxDecoration(
+                      color: isSelected ? pt.overlayColor : Colors.white,
+                      shape: BoxShape.circle,
+                      border: Border.all(
+                        color: isSelected ? Colors.white : pt.overlayColor,
+                        width: isSelected ? 3 : 2.2,
+                      ),
+                      boxShadow: [
+                        BoxShadow(
+                          color: pt.overlayColor.withValues(alpha: 0.35),
+                          blurRadius: isSelected ? 8 : 4,
+                          offset: const Offset(0, 2),
+                        ),
+                      ],
+                    ),
+                    child: Center(
+                      child: Icon(
+                        pt.category.icon,
+                        color: isSelected ? Colors.white : pt.overlayColor,
+                        size: isSelected ? 22 : 17,
                       ),
                     ),
                   ),
@@ -837,6 +1151,13 @@ class _PetaScreenState extends State<PetaScreen>
                   label: '🌊 Zona Tsunami',
                   categoryKey: 'tsunami',
                 ),
+                const SizedBox(width: 8),
+
+                // 5. [🔥 Peta Kerusakan] (FE-08 Heatmap SIGAP-Vision)
+                _buildFilterChip(
+                  label: '🔥 Peta Kerusakan',
+                  categoryKey: 'heatmap',
+                ),
               ],
             ),
           ),
@@ -857,6 +1178,9 @@ class _PetaScreenState extends State<PetaScreen>
         HapticFeedback.lightImpact();
         setState(() {
           _selectedCategory = categoryKey;
+          if (categoryKey != 'heatmap') {
+            _selectedHeatmapPoint = null;
+          }
         });
 
         if (categoryKey == 'tsunami') {
@@ -865,13 +1189,15 @@ class _PetaScreenState extends State<PetaScreen>
             SnackBar(
               backgroundColor: const Color(0xFFDC2626),
               content: Text(
-                '🌊 Menampilkan Garis Merah Bahaya Tsunami & Zona Hijau (>15 mdpl) Kota Padang',
+                '🌊 Menampilkan 3 Zona Elevasi Tsunami: Merah (<5m), Kuning (5-10m), & Hijau (>15m)',
                 style: GoogleFonts.plusJakartaSans(fontWeight: FontWeight.w700),
               ),
               duration: const Duration(seconds: 3),
               behavior: SnackBarBehavior.floating,
             ),
           );
+        } else if (categoryKey == 'heatmap') {
+          _loadHeatmapData();
         }
       },
       child: AnimatedContainer(
@@ -881,6 +1207,8 @@ class _PetaScreenState extends State<PetaScreen>
           color: isSelected
               ? (isPrimaryGreen
                     ? AppColors.primaryDark
+                    : categoryKey == 'heatmap'
+                    ? const Color(0xFF991B1B)
                     : const Color(0xFF1E293B))
               : Colors.white,
           borderRadius: BorderRadius.circular(24),
@@ -903,6 +1231,150 @@ class _PetaScreenState extends State<PetaScreen>
             fontWeight: isSelected ? FontWeight.w800 : FontWeight.w600,
             color: isSelected ? Colors.white : AppColors.primaryDarkest,
           ),
+        ),
+      ),
+    );
+  }
+
+  // ==========================================
+  // LEGENDA 3 ZONA ELEVASI TSUNAMI (FE-08)
+  // ==========================================
+  Widget _buildTsunamiZoneLegend() {
+    return Positioned(
+      top: _isNavigating ? 176 : 114,
+      left: 14,
+      right: 74,
+      child: Container(
+        key: const ValueKey('tsunami_zone_legend'),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        decoration: BoxDecoration(
+          color: Colors.white.withValues(alpha: 0.95),
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: AppColors.borderLight),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.1),
+              blurRadius: 8,
+              offset: const Offset(0, 2),
+            ),
+          ],
+        ),
+        child: Wrap(
+          spacing: 10,
+          runSpacing: 6,
+          children: [
+            _buildLegendDot(const Color(0xFFEF4444), 'Merah <5 mdpl'),
+            _buildLegendDot(const Color(0xFFF59E0B), 'Kuning 5-10 mdpl'),
+            _buildLegendDot(const Color(0xFF10B981), 'Hijau >15 mdpl'),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildLegendDot(Color color, String label) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Container(
+          width: 10,
+          height: 10,
+          decoration: BoxDecoration(
+            color: color,
+            shape: BoxShape.circle,
+          ),
+        ),
+        const SizedBox(width: 5),
+        Text(
+          label,
+          style: GoogleFonts.plusJakartaSans(
+            fontSize: 11,
+            fontWeight: FontWeight.w700,
+            color: AppColors.primaryDarkest,
+          ),
+        ),
+      ],
+    );
+  }
+
+  // ==========================================
+  // BANNER STATUS HEATMAP KERUSAKAN (FE-08)
+  // ==========================================
+  Widget _buildHeatmapStatusBanner() {
+    final result = _heatmapLoadResult;
+    final message = _isLoadingHeatmap
+        ? 'Memuat titik kerusakan lokal & server...'
+        : (result?.statusMessage ??
+              'Menampilkan ${_heatmapPoints.length} titik kerusakan lokal.');
+
+    return Positioned(
+      top: 114,
+      left: 14,
+      right: 74,
+      child: Container(
+        key: const ValueKey('heatmap_status_banner'),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
+        decoration: BoxDecoration(
+          color: Colors.white.withValues(alpha: 0.96),
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(
+            color: (result?.serverAvailable ?? false)
+                ? const Color(0xFF10B981)
+                : const Color(0xFFF59E0B),
+            width: 1.2,
+          ),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.1),
+              blurRadius: 8,
+              offset: const Offset(0, 2),
+            ),
+          ],
+        ),
+        child: Row(
+          children: [
+            Icon(
+              (result?.serverAvailable ?? false)
+                  ? Icons.cloud_done_rounded
+                  : Icons.storage_rounded,
+              size: 18,
+              color: (result?.serverAvailable ?? false)
+                  ? const Color(0xFF047857)
+                  : const Color(0xFFB45309),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                message,
+                style: GoogleFonts.plusJakartaSans(
+                  fontSize: 11.5,
+                  fontWeight: FontWeight.w700,
+                  color: AppColors.primaryDarkest,
+                  height: 1.3,
+                ),
+              ),
+            ),
+            IconButton(
+              key: const ValueKey('heatmap_refresh_button'),
+              tooltip: 'Muat ulang heatmap',
+              onPressed: _isLoadingHeatmap
+                  ? null
+                  : () => _loadHeatmapData(showFeedback: true),
+              icon: _isLoadingHeatmap
+                  ? const SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Icon(
+                      Icons.refresh_rounded,
+                      size: 18,
+                      color: AppColors.primaryDark,
+                    ),
+              padding: EdgeInsets.zero,
+              constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+            ),
+          ],
         ),
       ),
     );
@@ -938,6 +1410,7 @@ class _PetaScreenState extends State<PetaScreen>
 
           // Tombol Pusatkan ke Lokasi Pengguna ("My Location")
           FloatingActionButton.small(
+            key: const ValueKey('my_location_fab'),
             heroTag: 'my_location_btn',
             backgroundColor: Colors.white,
             foregroundColor: const Color(0xFF2563EB),
@@ -958,7 +1431,7 @@ class _PetaScreenState extends State<PetaScreen>
           ),
           const SizedBox(height: 8),
 
-          // Zoom In
+          // Zoom In & Zoom Out
           Container(
             decoration: BoxDecoration(
               color: Colors.white,
@@ -1053,7 +1526,7 @@ class _PetaScreenState extends State<PetaScreen>
                     ),
                   ),
                   Text(
-                    'Menuju ${_selectedLocation.name} (${_selectedLocation.walkTime})',
+                    'Menuju ${_selectedLocation.name} (${_displayWalkTimeFor(_selectedLocation)})',
                     style: GoogleFonts.plusJakartaSans(
                       fontSize: 12.5,
                       fontWeight: FontWeight.w800,
@@ -1080,21 +1553,338 @@ class _PetaScreenState extends State<PetaScreen>
   }
 
   // ==========================================
+  // KARTU DETAIL HEATMAP KERUSAKAN / EMPTY STATE (FE-08)
+  // ==========================================
+  Widget _buildHeatmapBottomCard() {
+    final selected = _selectedHeatmapPoint;
+    final visiblePoints = _filteredHeatmapPoints;
+
+    return Positioned(
+      left: 12,
+      right: 12,
+      bottom: 10,
+      child: Container(
+        key: ValueKey(
+          selected != null ? 'heatmap_detail_${selected.id}' : 'heatmap_summary_card',
+        ),
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(22),
+          border: Border.all(
+            color: selected != null
+                ? selected.overlayColor
+                : AppColors.borderLight,
+            width: selected != null ? 1.8 : 1.2,
+          ),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.15),
+              blurRadius: 16,
+              offset: const Offset(0, -2),
+            ),
+          ],
+        ),
+        child: selected != null
+            ? _buildHeatmapPointDetailsContent(selected)
+            : _buildHeatmapOverviewOrEmptyContent(visiblePoints),
+      ),
+    );
+  }
+
+  Widget _buildHeatmapPointDetailsContent(DamageHeatmapPoint point) {
+    final coordStr =
+        '${point.latitude.toStringAsFixed(5)}, ${point.longitude.toStringAsFixed(5)}';
+    final timeStr =
+        '${point.reportedAt.day.toString().padLeft(2, '0')}/${point.reportedAt.month.toString().padLeft(2, '0')}/${point.reportedAt.year} '
+        '${point.reportedAt.hour.toString().padLeft(2, '0')}:${point.reportedAt.minute.toString().padLeft(2, '0')}';
+
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+              decoration: BoxDecoration(
+                color: point.category.backgroundColor,
+                borderRadius: BorderRadius.circular(20),
+                border: Border.all(color: point.category.borderColor),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(
+                    point.category.icon,
+                    size: 14,
+                    color: point.category.accentColor,
+                  ),
+                  const SizedBox(width: 4),
+                  Text(
+                    point.category.label,
+                    style: GoogleFonts.plusJakartaSans(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w900,
+                      color: point.category.textColor,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(width: 8),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              decoration: BoxDecoration(
+                color: AppColors.mintSurface,
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: AppColors.borderLight),
+              ),
+              child: Text(
+                point.sourceLabel,
+                style: GoogleFonts.plusJakartaSans(
+                  fontSize: 10.5,
+                  fontWeight: FontWeight.w800,
+                  color: AppColors.primaryDark,
+                ),
+              ),
+            ),
+            const Spacer(),
+            IconButton(
+              icon: const Icon(Icons.close_rounded, size: 20),
+              onPressed: () => setState(() => _selectedHeatmapPoint = null),
+              padding: EdgeInsets.zero,
+              constraints: const BoxConstraints(minWidth: 30, minHeight: 30),
+            ),
+          ],
+        ),
+        const SizedBox(height: 8),
+        Text(
+          point.description,
+          style: GoogleFonts.plusJakartaSans(
+            fontSize: 13.5,
+            fontWeight: FontWeight.w700,
+            color: AppColors.primaryDarkest,
+            height: 1.35,
+          ),
+          maxLines: 3,
+          overflow: TextOverflow.ellipsis,
+        ),
+        const SizedBox(height: 8),
+        Wrap(
+          spacing: 10,
+          runSpacing: 6,
+          children: [
+            Text(
+              'Confidence: ${point.confidenceLabel}',
+              style: GoogleFonts.plusJakartaSans(
+                fontSize: 11.5,
+                fontWeight: FontWeight.w700,
+                color: AppColors.primaryDark,
+              ),
+            ),
+            Text(
+              'GPS: $coordStr',
+              style: GoogleFonts.plusJakartaSans(
+                fontSize: 11.5,
+                fontWeight: FontWeight.w600,
+                color: AppColors.textSlate,
+              ),
+            ),
+            Text(
+              'Waktu: $timeStr',
+              style: GoogleFonts.plusJakartaSans(
+                fontSize: 11.5,
+                fontWeight: FontWeight.w600,
+                color: AppColors.textSlate,
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 6),
+        Text(
+          'Status: ${point.syncStatusLabel}',
+          style: GoogleFonts.plusJakartaSans(
+            fontSize: 11.5,
+            fontWeight: FontWeight.w700,
+            color: AppColors.primary,
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildHeatmapOverviewOrEmptyContent(
+    List<DamageHeatmapPoint> visiblePoints,
+  ) {
+    if (visiblePoints.isEmpty) {
+      return Column(
+        key: const ValueKey('heatmap_empty_card'),
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(
+                Icons.info_outline_rounded,
+                color: AppColors.primaryDark,
+                size: 20,
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  'Belum Ada Titik Kerusakan Tercatat',
+                  style: GoogleFonts.plusJakartaSans(
+                    fontSize: 14.5,
+                    fontWeight: FontWeight.w900,
+                    color: AppColors.primaryDarkest,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          Text(
+            'Titik sebaran kerusakan akan muncul otomatis di peta setelah Anda memindai bangunan dengan koordinat GPS melalui fitur SIGAP-Vision atau saat server heatmap tersedia.',
+            style: GoogleFonts.plusJakartaSans(
+              fontSize: 12,
+              fontWeight: FontWeight.w500,
+              color: AppColors.textSlate,
+              height: 1.4,
+            ),
+          ),
+          const SizedBox(height: 10),
+          SizedBox(
+            width: double.infinity,
+            child: OutlinedButton.icon(
+              onPressed: _isLoadingHeatmap
+                  ? null
+                  : () => _loadHeatmapData(showFeedback: true),
+              icon: const Icon(Icons.refresh_rounded, size: 18),
+              label: Text(
+                'Muat Ulang Data Kerusakan',
+                style: GoogleFonts.plusJakartaSans(
+                  fontSize: 12.5,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+              style: OutlinedButton.styleFrom(
+                foregroundColor: AppColors.primaryDark,
+                side: const BorderSide(color: AppColors.primary),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+              ),
+            ),
+          ),
+        ],
+      );
+    }
+
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'Peta Sebaran Kerusakan (${visiblePoints.length} Titik)',
+          style: GoogleFonts.plusJakartaSans(
+            fontSize: 14.5,
+            fontWeight: FontWeight.w900,
+            color: AppColors.primaryDarkest,
+          ),
+        ),
+        const SizedBox(height: 4),
+        Text(
+          'Ketuk penanda di peta atau pilih laporan terbaru di bawah untuk melihat detail risiko.',
+          style: GoogleFonts.plusJakartaSans(
+            fontSize: 12,
+            fontWeight: FontWeight.w500,
+            color: AppColors.textSlate,
+          ),
+        ),
+        const SizedBox(height: 10),
+        SizedBox(
+          height: 54,
+          child: ListView.separated(
+            scrollDirection: Axis.horizontal,
+            itemCount: visiblePoints.length,
+            separatorBuilder: (_, _) => const SizedBox(width: 8),
+            itemBuilder: (context, index) {
+              final pt = visiblePoints[index];
+              return GestureDetector(
+                key: ValueKey('heatmap_chip_${pt.id}'),
+                onTap: () => _selectHeatmapPoint(pt),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 8,
+                  ),
+                  decoration: BoxDecoration(
+                    color: pt.category.backgroundColor,
+                    borderRadius: BorderRadius.circular(14),
+                    border: Border.all(color: pt.category.borderColor),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(
+                        pt.category.icon,
+                        size: 18,
+                        color: pt.category.accentColor,
+                      ),
+                      const SizedBox(width: 8),
+                      Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Text(
+                            pt.category.shortLabel,
+                            style: GoogleFonts.plusJakartaSans(
+                              fontSize: 11.5,
+                              fontWeight: FontWeight.w900,
+                              color: pt.category.textColor,
+                            ),
+                          ),
+                          Text(
+                            pt.sourceLabel,
+                            style: GoogleFonts.plusJakartaSans(
+                              fontSize: 10,
+                              fontWeight: FontWeight.w600,
+                              color: AppColors.textSlate,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              );
+            },
+          ),
+        ),
+      ],
+    );
+  }
+
+  // ==========================================
   // 3. KARTU NAVIGASI DARURAT (Di Bawah Peta)
   // Draggable Bottom Sheet / Card
   // ==========================================
   Widget _buildEmergencyBottomSheet() {
+    final displayDistance = _displayDistanceFor(_selectedLocation);
+    final displayWalkTime = _displayWalkTimeFor(_selectedLocation);
+
     return Positioned(
       left: 12,
       right: 12,
       bottom: 10,
       child: AnimatedSwitcher(
         duration: const Duration(milliseconds: 260),
-        switchInCurve: Curves.easeOutBack, // Efek pegas (spring/bounce) sangat halus di akhir gerakan
+        switchInCurve: Curves.easeOutBack,
         switchOutCurve: Curves.easeInCubic,
         transitionBuilder: (child, animation) {
           final slideAnim = Tween<Offset>(
-            begin: const Offset(0.0, 0.2), // Slide-up dari bawah
+            begin: const Offset(0.0, 0.2),
             end: Offset.zero,
           ).animate(animation);
           return SlideTransition(
@@ -1105,248 +1895,257 @@ class _PetaScreenState extends State<PetaScreen>
         child: Container(
           key: ValueKey(_selectedLocation.id),
           padding: const EdgeInsets.all(16),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(22),
-          border: Border.all(color: AppColors.borderLight, width: 1.2),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withValues(alpha: 0.15),
-              blurRadius: 16,
-              offset: const Offset(0, -2),
-            ),
-          ],
-        ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // Handle Bar Draggable
-            Center(
-              child: Container(
-                width: 36,
-                height: 4,
-                decoration: BoxDecoration(
-                  color: AppColors.borderLight,
-                  borderRadius: BorderRadius.circular(10),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(22),
+            border: Border.all(color: AppColors.borderLight, width: 1.2),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.15),
+                blurRadius: 16,
+                offset: const Offset(0, -2),
+              ),
+            ],
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Handle Bar Draggable
+              Center(
+                child: Container(
+                  width: 36,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: AppColors.borderLight,
+                    borderRadius: BorderRadius.circular(10),
+                  ),
                 ),
               ),
-            ),
-            const SizedBox(height: 10),
+              const SizedBox(height: 10),
 
-            // Header: Judul Shelter & Kategori
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        _selectedLocation.name,
-                        style: GoogleFonts.plusJakartaSans(
-                          fontSize: 17.5,
-                          fontWeight: FontWeight.w900,
-                          color: AppColors.primaryDarkest,
-                        ),
-                      ),
-                      const SizedBox(height: 2),
-                      Text(
-                        _selectedLocation.typeLabel,
-                        style: GoogleFonts.plusJakartaSans(
-                          fontSize: 11.5,
-                          fontWeight: FontWeight.w600,
-                          color: AppColors.primary,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 10,
-                    vertical: 4,
-                  ),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFF10B981).withValues(alpha: 0.15),
-                    borderRadius: BorderRadius.circular(20),
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      const Icon(
-                        Icons.shield_rounded,
-                        color: Color(0xFF10B981),
-                        size: 14,
-                      ),
-                      const SizedBox(width: 4),
-                      Text(
-                        'AMAN',
-                        style: GoogleFonts.plusJakartaSans(
-                          fontSize: 11,
-                          fontWeight: FontWeight.w800,
-                          color: const Color(0xFF065F46),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-
-            const SizedBox(height: 12),
-
-            // Metrik Singkat: Jarak ("400 meter") & Estimasi ("5 mnt jalan kaki")
-            Row(
-              children: [
-                Expanded(
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 10,
-                      vertical: 8,
-                    ),
-                    decoration: BoxDecoration(
-                      color: AppColors.mintAccent.withValues(alpha: 0.5),
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: Row(
+              // Header: Judul Shelter & Kategori
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        const Icon(
-                          Icons.near_me_rounded,
-                          color: AppColors.primaryDark,
-                          size: 18,
+                        Text(
+                          _selectedLocation.name,
+                          style: GoogleFonts.plusJakartaSans(
+                            fontSize: 17.5,
+                            fontWeight: FontWeight.w900,
+                            color: AppColors.primaryDarkest,
+                          ),
                         ),
-                        const SizedBox(width: 6),
-                        Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              'Jarak',
-                              style: GoogleFonts.plusJakartaSans(
-                                fontSize: 10,
-                                color: AppColors.textSlate,
-                              ),
-                            ),
-                            Text(
-                              _selectedLocation.distance,
-                              style: GoogleFonts.plusJakartaSans(
-                                fontSize: 13,
-                                fontWeight: FontWeight.w800,
-                                color: AppColors.primaryDarkest,
-                              ),
-                            ),
-                          ],
+                        const SizedBox(height: 2),
+                        Text(
+                          _selectedLocation.typeLabel,
+                          style: GoogleFonts.plusJakartaSans(
+                            fontSize: 11.5,
+                            fontWeight: FontWeight.w600,
+                            color: AppColors.primary,
+                          ),
                         ),
                       ],
                     ),
                   ),
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Container(
+                  Container(
                     padding: const EdgeInsets.symmetric(
                       horizontal: 10,
-                      vertical: 8,
+                      vertical: 4,
                     ),
                     decoration: BoxDecoration(
-                      color: AppColors.mintAccent.withValues(alpha: 0.5),
-                      borderRadius: BorderRadius.circular(12),
+                      color: const Color(0xFF10B981).withValues(alpha: 0.15),
+                      borderRadius: BorderRadius.circular(20),
                     ),
                     child: Row(
+                      mainAxisSize: MainAxisSize.min,
                       children: [
                         const Icon(
-                          Icons.directions_walk_rounded,
-                          color: AppColors.primaryDark,
-                          size: 18,
+                          Icons.shield_rounded,
+                          color: Color(0xFF10B981),
+                          size: 14,
                         ),
-                        const SizedBox(width: 6),
-                        Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              'Estimasi',
-                              style: GoogleFonts.plusJakartaSans(
-                                fontSize: 10,
-                                color: AppColors.textSlate,
-                              ),
-                            ),
-                            Text(
-                              _selectedLocation.walkTime,
-                              style: GoogleFonts.plusJakartaSans(
-                                fontSize: 13,
-                                fontWeight: FontWeight.w800,
-                                color: AppColors.primaryDarkest,
-                              ),
-                            ),
-                          ],
+                        const SizedBox(width: 4),
+                        Text(
+                          'AMAN',
+                          style: GoogleFonts.plusJakartaSans(
+                            fontSize: 11,
+                            fontWeight: FontWeight.w800,
+                            color: const Color(0xFF065F46),
+                          ),
                         ),
                       ],
                     ),
                   ),
-                ),
-              ],
-            ),
+                ],
+              ),
 
-            const SizedBox(height: 10),
+              const SizedBox(height: 12),
 
-            // Catatan Rute & Elevasi Ringkas
-            Row(
-              children: [
-                const Icon(
-                  Icons.terrain_rounded,
-                  size: 14,
-                  color: AppColors.textSlate,
-                ),
-                const SizedBox(width: 4),
-                Text(
-                  _selectedLocation.elevation,
-                  style: GoogleFonts.plusJakartaSans(
-                    fontSize: 11,
-                    fontWeight: FontWeight.w600,
+              // Metrik Singkat: Jarak & Estimasi Jalan Kaki
+              Row(
+                children: [
+                  Expanded(
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 10,
+                        vertical: 8,
+                      ),
+                      decoration: BoxDecoration(
+                        color: AppColors.mintAccent.withValues(alpha: 0.5),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Row(
+                        children: [
+                          const Icon(
+                            Icons.near_me_rounded,
+                            color: AppColors.primaryDark,
+                            size: 18,
+                          ),
+                          const SizedBox(width: 6),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  'Jarak',
+                                  style: GoogleFonts.plusJakartaSans(
+                                    fontSize: 10,
+                                    color: AppColors.textSlate,
+                                  ),
+                                ),
+                                Text(
+                                  displayDistance,
+                                  key: const ValueKey('shelter_distance_text'),
+                                  style: GoogleFonts.plusJakartaSans(
+                                    fontSize: 13,
+                                    fontWeight: FontWeight.w800,
+                                    color: AppColors.primaryDarkest,
+                                  ),
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 10,
+                        vertical: 8,
+                      ),
+                      decoration: BoxDecoration(
+                        color: AppColors.mintAccent.withValues(alpha: 0.5),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Row(
+                        children: [
+                          const Icon(
+                            Icons.directions_walk_rounded,
+                            color: AppColors.primaryDark,
+                            size: 18,
+                          ),
+                          const SizedBox(width: 6),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  'Estimasi',
+                                  style: GoogleFonts.plusJakartaSans(
+                                    fontSize: 10,
+                                    color: AppColors.textSlate,
+                                  ),
+                                ),
+                                Text(
+                                  displayWalkTime,
+                                  key: const ValueKey('shelter_walk_time_text'),
+                                  style: GoogleFonts.plusJakartaSans(
+                                    fontSize: 13,
+                                    fontWeight: FontWeight.w800,
+                                    color: AppColors.primaryDarkest,
+                                  ),
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+
+              const SizedBox(height: 10),
+
+              // Catatan Rute & Elevasi Ringkas
+              Row(
+                children: [
+                  const Icon(
+                    Icons.terrain_rounded,
+                    size: 14,
                     color: AppColors.textSlate,
                   ),
-                ),
-              ],
-            ),
+                  const SizedBox(width: 4),
+                  Expanded(
+                    child: Text(
+                      _selectedLocation.elevation,
+                      style: GoogleFonts.plusJakartaSans(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w600,
+                        color: AppColors.textSlate,
+                      ),
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                ],
+              ),
 
-            const SizedBox(height: 14),
+              const SizedBox(height: 14),
 
-            // TOMBOL UTAMA SANGAT BESAR & MENCOLOK:
-            // "Mulai Rute Evakuasi (Jalan Kaki)"
-            SizedBox(
-              width: double.infinity,
-              height: 52,
-              child: ElevatedButton.icon(
-                onPressed: _startEvacuationRoute,
-                icon: const Icon(
-                  Icons.directions_walk_rounded,
-                  color: Colors.white,
-                  size: 24,
-                ),
-                label: Text(
-                  'Mulai Rute Evakuasi (Jalan Kaki)',
-                  style: GoogleFonts.plusJakartaSans(
-                    fontSize: 14.5,
-                    fontWeight: FontWeight.w900,
+              // TOMBOL UTAMA SANGAT BESAR & MENCOLOK:
+              // "Mulai Rute Evakuasi (Jalan Kaki)"
+              SizedBox(
+                width: double.infinity,
+                height: 52,
+                child: ElevatedButton.icon(
+                  onPressed: _startEvacuationRoute,
+                  icon: const Icon(
+                    Icons.directions_walk_rounded,
                     color: Colors.white,
-                    letterSpacing: 0.3,
+                    size: 24,
                   ),
-                ),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(
-                    0xFF15803D,
-                  ), // Hijau Mencolok / Aman
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(16),
+                  label: Text(
+                    'Mulai Rute Evakuasi (Jalan Kaki)',
+                    style: GoogleFonts.plusJakartaSans(
+                      fontSize: 14.5,
+                      fontWeight: FontWeight.w900,
+                      color: Colors.white,
+                      letterSpacing: 0.3,
+                    ),
                   ),
-                  elevation: 4,
-                  shadowColor: const Color(0xFF15803D).withValues(alpha: 0.4),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFF15803D),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(16),
+                    ),
+                    elevation: 4,
+                    shadowColor: const Color(0xFF15803D).withValues(alpha: 0.4),
+                  ),
                 ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
-      ),
       ),
     );
   }

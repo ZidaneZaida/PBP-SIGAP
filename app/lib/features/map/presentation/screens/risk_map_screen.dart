@@ -11,5 +11,8 @@ class RiskMapScreen extends PetaScreen {
     super.onNavigateToFamily,
     super.onTabSelected,
     super.embedded = false,
+    super.locationService,
+    super.damageReportRepository,
+    super.heatmapService,
   });
 }
