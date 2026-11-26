@@ -5,6 +5,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:sigap/core/navigation/sigap_transitions.dart';
 import 'package:sigap/core/theme/app_colors.dart';
 import 'package:sigap/features/alerts/presentation/screens/peringatan_screen.dart';
+import 'package:sigap/features/beacon/presentation/screens/emergency_beacon_screen.dart';
 import 'package:sigap/features/evacuation/presentation/screens/evacuation_guide_screen.dart';
 import 'package:sigap/features/family/presentation/screens/keluarga_screen.dart';
 import 'package:sigap/features/map/presentation/screens/peta_screen.dart';
@@ -573,151 +574,11 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
     );
   }
 
-  /// Membuka akses Suar SOS Offline darurat.
-  /// Sementara menampilkan bottom sheet darurat dengan informasi jujur terkait
-  /// jadwal FE-09 (BLE Beacon & strobo Morse) beserta akses cepat fitur darurat
-  /// yang sudah tersedia; pada FE-09 akan diganti menuju `EmergencyBeaconScreen`.
+  /// Membuka layar Suar SOS Offline darurat (FE-09).
   void _openOfflineSosBeacon() {
     HapticFeedback.heavyImpact();
-    showSigapModalBottomSheet<void>(
-      context: context,
-      isScrollControlled: true,
-      builder: (ctx) => Container(
-        decoration: const BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-        ),
-        padding: const EdgeInsets.fromLTRB(22, 16, 22, 24),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Center(
-              child: Container(
-                width: 44,
-                height: 5,
-                decoration: BoxDecoration(
-                  color: AppColors.borderLight,
-                  borderRadius: BorderRadius.circular(10),
-                ),
-              ),
-            ),
-            const SizedBox(height: 16),
-            Row(
-              children: [
-                Container(
-                  padding: const EdgeInsets.all(10),
-                  decoration: const BoxDecoration(
-                    color: Color(0xFFFEE2E2),
-                    shape: BoxShape.circle,
-                  ),
-                  child: const Icon(
-                    Icons.sensors_rounded,
-                    color: Color(0xFFDC2626),
-                    size: 26,
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'Akses Suar SOS Offline',
-                        style: GoogleFonts.plusJakartaSans(
-                          fontSize: 17.5,
-                          fontWeight: FontWeight.w900,
-                          color: const Color(0xFF991B1B),
-                        ),
-                      ),
-                      Text(
-                        'Persiapan Mode Darurat Tanpa Sinyal',
-                        style: GoogleFonts.plusJakartaSans(
-                          fontSize: 12,
-                          fontWeight: FontWeight.w600,
-                          color: AppColors.textSlate,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 14),
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: const Color(0xFFFFFBEB),
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: const Color(0xFFFDE68A)),
-              ),
-              child: Text(
-                'Mode pemancar BLE Beacon & senter strobo Morse penuh masih dalam tahap pengembangan (FE-09) dan belum aktif pada versi ini. Gunakan tindakan darurat berikut untuk segera meminta bantuan:',
-                style: GoogleFonts.plusJakartaSans(
-                  fontSize: 12.5,
-                  fontWeight: FontWeight.w600,
-                  color: const Color(0xFF78350F),
-                  height: 1.45,
-                ),
-              ),
-            ),
-            const SizedBox(height: 16),
-            SizedBox(
-              width: double.infinity,
-              height: 48,
-              child: ElevatedButton.icon(
-                onPressed: () {
-                  Navigator.of(ctx).pop();
-                  _triggerSiren();
-                },
-                icon: const Icon(Icons.campaign_rounded),
-                label: Text(
-                  'Buka Sirine SOS Darurat',
-                  style: GoogleFonts.plusJakartaSans(
-                    fontWeight: FontWeight.w800,
-                    fontSize: 13.5,
-                  ),
-                ),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFFDC2626),
-                  foregroundColor: Colors.white,
-                  elevation: 0,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(14),
-                  ),
-                ),
-              ),
-            ),
-            const SizedBox(height: 10),
-            SizedBox(
-              width: double.infinity,
-              height: 48,
-              child: OutlinedButton.icon(
-                onPressed: () {
-                  Navigator.of(ctx).pop();
-                  _callEmergency112();
-                },
-                icon: const Icon(Icons.phone_in_talk_rounded),
-                label: Text(
-                  'Hubungi Kontak Darurat 112 / BPBD',
-                  style: GoogleFonts.plusJakartaSans(
-                    fontWeight: FontWeight.w800,
-                    fontSize: 13.5,
-                  ),
-                ),
-                style: OutlinedButton.styleFrom(
-                  foregroundColor: AppColors.primaryDark,
-                  side: const BorderSide(color: AppColors.primary, width: 1.3),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(14),
-                  ),
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
+    Navigator.of(context).push(
+      SigapRoutes.slideRight(const EmergencyBeaconScreen()),
     );
   }
 
