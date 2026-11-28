@@ -497,6 +497,11 @@ class DamageScanReport {
   final DamageSyncStatus syncStatus;
   final DateTime? syncedAt;
 
+  /// URL foto di server (diisi hanya untuk laporan yang dibaca dari backend).
+  ///
+  /// Bernilai `null` untuk laporan lokal yang fotonya masih di perangkat.
+  final String? imageUrl;
+
   const DamageScanReport({
     required this.id,
     required this.imagePath,
@@ -505,7 +510,11 @@ class DamageScanReport {
     required this.result,
     required this.syncStatus,
     this.syncedAt,
+    this.imageUrl,
   });
+
+  /// Bernilai `true` bila laporan hanya ada di server (belum ada salinan lokal).
+  bool get isRemoteOnly => imagePath.isEmpty && (imageUrl?.isNotEmpty ?? false);
 
   DamageScanReport copyWith({
     String? id,
@@ -515,6 +524,7 @@ class DamageScanReport {
     DamageClassificationResult? result,
     DamageSyncStatus? syncStatus,
     DateTime? syncedAt,
+    String? imageUrl,
     bool clearSyncedAt = false,
   }) {
     return DamageScanReport(
@@ -525,6 +535,7 @@ class DamageScanReport {
       result: result ?? this.result,
       syncStatus: syncStatus ?? this.syncStatus,
       syncedAt: clearSyncedAt ? null : (syncedAt ?? this.syncedAt),
+      imageUrl: imageUrl ?? this.imageUrl,
     );
   }
 
@@ -536,7 +547,58 @@ class DamageScanReport {
         'result': result.toJson(),
         'syncStatus': syncStatus.name,
         if (syncedAt != null) 'syncedAt': syncedAt!.toIso8601String(),
+        if (imageUrl != null) 'imageUrl': imageUrl,
       };
+
+  /// Membangun laporan dari payload backend `GET /api/damage-reports/my/`.
+  ///
+  /// Laporan server tidak membawa saran tindakan (`recommendations`), karena
+  /// teks itu hanya dihasilkan di perangkat. Field tersebut dikosongkan agar UI
+  /// tidak menampilkan rekomendasi palsu.
+  factory DamageScanReport.fromServerJson(Map<String, dynamic> json) {
+    final lat = (json['latitude'] as num?)?.toDouble();
+    final lng = (json['longitude'] as num?)?.toDouble();
+    final createdAt =
+        DateTime.tryParse(json['created_at'] as String? ?? '') ?? DateTime.now();
+    final damageLevel = DamageCategory.fromName(
+      json['damage_level'] as String?,
+    );
+    final imageUrl = (json['image_url'] as String? ?? '').trim();
+    final clientId = (json['client_report_id'] as String? ?? '').trim();
+    final serverId = json['id'] as String? ?? '';
+    final verified = json['is_verified_by_officer'] as bool?;
+
+    return DamageScanReport(
+      // Pakai ID aplikasi bila ada agar cocok dengan salinan lokal.
+      id: clientId.isNotEmpty ? clientId : serverId,
+      imagePath: '',
+      imageUrl: imageUrl.isNotEmpty ? imageUrl : null,
+      createdAt: createdAt,
+      location: (lat != null && lng != null)
+          ? VisionLocationData(
+              latitude: lat,
+              longitude: lng,
+              displayLabel:
+                  'GPS Perangkat (${lat.toStringAsFixed(5)}, ${lng.toStringAsFixed(5)})',
+              capturedAt: createdAt,
+            )
+          : null,
+      result: DamageClassificationResult(
+        category: damageLevel,
+        confidenceScore: (json['confidence_score'] as num?)?.toDouble(),
+        summary: json['description'] as String? ?? '',
+        recommendations: const [],
+        // Verifikasi petugas BPBD bukan hasil AI, jadi bukan simulasi.
+        isSimulation: verified == null,
+        classifierName: verified == true
+            ? 'Terverifikasi Petugas BPBD'
+            : 'Classifier On-Device',
+        analyzedAt: createdAt,
+      ),
+      syncStatus: DamageSyncStatus.synced,
+      syncedAt: createdAt,
+    );
+  }
 
   factory DamageScanReport.fromJson(Map<String, dynamic> json) {
     final locJson = json['location'];
@@ -554,7 +616,13 @@ class DamageScanReport {
       ),
       syncStatus: DamageSyncStatus.fromName(json['syncStatus'] as String?),
       syncedAt: rawSyncedAt != null ? DateTime.tryParse(rawSyncedAt) : null,
+      imageUrl: _nonEmpty(json['imageUrl'] as String?),
     );
+  }
+
+  static String? _nonEmpty(String? value) {
+    final trimmed = value?.trim() ?? '';
+    return trimmed.isEmpty ? null : trimmed;
   }
 }
 

@@ -24,6 +24,7 @@ import '../widgets/evacuation_compass_card.dart';
 class EvacuationGuideScreen extends StatefulWidget {
   final int initialRemainingSeconds;
   final EvacuationLocationService? locationService;
+  final EvacuationPointRepository? pointRepository;
   final LatLng? initialPositionOverride;
   final bool autoStartTimer;
 
@@ -31,6 +32,7 @@ class EvacuationGuideScreen extends StatefulWidget {
     super.key,
     this.initialRemainingSeconds = HomeScreen.defaultGoldenTimeSeconds,
     this.locationService,
+    this.pointRepository,
     this.initialPositionOverride,
     this.autoStartTimer = true,
   });
@@ -41,12 +43,16 @@ class EvacuationGuideScreen extends StatefulWidget {
 
 class _EvacuationGuideScreenState extends State<EvacuationGuideScreen> {
   late final EvacuationLocationService _locationService;
+  late final EvacuationPointRepository _pointRepository;
   late int _remainingSeconds;
   Timer? _countdownTimer;
 
   late EvacuationLocationResult _locationResult;
   bool _isLoadingLocation = false;
   String? _selectedAlternativeId;
+
+  /// Katalog shelter aktif: bawaan aplikasi, diganti data server bila ada.
+  List<EvacuationPoint> _shelters = PadangEvacuationData.tesShelters;
 
   late EvacuationDecision _decision;
   late List<EvacuationCandidate> _rankedAll;
@@ -56,6 +62,8 @@ class _EvacuationGuideScreenState extends State<EvacuationGuideScreen> {
     super.initState();
     _locationService =
         widget.locationService ?? DefaultEvacuationLocationService.instance;
+    _pointRepository =
+        widget.pointRepository ?? EvacuationPointRepository.instance;
     _remainingSeconds =
         widget.initialRemainingSeconds < 0 ? 0 : widget.initialRemainingSeconds;
 
@@ -83,6 +91,21 @@ class _EvacuationGuideScreenState extends State<EvacuationGuideScreen> {
     if (widget.initialPositionOverride == null) {
       _refreshLocation(showFeedback: false);
     }
+
+    unawaited(_loadServerShelters());
+  }
+
+  /// Memperbarui katalog shelter dari server tanpa memblokir tampilan awal.
+  ///
+  /// Bila server tidak menjawab, katalog bawaan tetap dipakai — panduan
+  /// evakuasi harus selalu bisa dibuka dalam kondisi darurat/offline.
+  Future<void> _loadServerShelters() async {
+    final shelters = await _pointRepository.fetchShelters();
+    if (!mounted) return;
+    setState(() {
+      _shelters = EvacuationPointRepository.mergeWithDefaults(shelters);
+      _recomputeEvacuationPlan();
+    });
   }
 
   @override
@@ -135,14 +158,17 @@ class _EvacuationGuideScreenState extends State<EvacuationGuideScreen> {
       userLat: pos.latitude,
       userLng: pos.longitude,
       remainingGoldenTimeMinutes: remainingMinutes,
-      tesShelters: PadangEvacuationData.tesShelters,
+      tesShelters: _shelters,
       horizontalSafeZones: PadangEvacuationData.horizontalSafeZones,
     );
 
     _rankedAll = EvacuationDecisionEngine.rankCandidates(
       userLat: pos.latitude,
       userLng: pos.longitude,
-      points: PadangEvacuationData.allPoints,
+      points: <EvacuationPoint>[
+        ..._shelters,
+        ...PadangEvacuationData.horizontalSafeZones,
+      ],
     );
   }
 

@@ -8,6 +8,7 @@ from apps.map.views import (
     OfficerRiskZoneDetailView,
     OfficerRiskZoneView,
     RiskZoneLayerView,
+    TsunamiShelterListView,
 )
 
 app_name = "map"
@@ -16,6 +17,7 @@ urlpatterns = [
     path("map/nearby/", NearbyView.as_view(), name="nearby"),
     path("map/risk-zones/", RiskZoneLayerView.as_view(), name="risk-zones"),
     path("assistance-points/", AssistancePointListView.as_view(), name="points"),
+    path("shelters/tsunami/", TsunamiShelterListView.as_view(), name="tsunami-shelters"),
     path(
         "officer/assistance-points/",
         OfficerAssistancePointView.as_view(),

@@ -19,6 +19,20 @@ class DamageStorageException implements Exception {
   String toString() => message;
 }
 
+/// Exception saat mengambil riwayat laporan dari server gagal.
+///
+/// Dipisahkan dari [DamageStorageException] agar UI dapat membedakan masalah
+/// jaringan/sesi (riwayat lokal tetap tampil) dari kerusakan penyimpanan.
+class DamageSyncException implements Exception {
+  final String message;
+  final bool needsLogin;
+
+  const DamageSyncException(this.message, {this.needsLogin = false});
+
+  @override
+  String toString() => message;
+}
+
 /// Hasil pengecekan & upaya sinkronisasi antrean laporan lokal.
 class VisionSyncCheckResult {
   final bool hasInternet;
@@ -97,6 +111,9 @@ class DamageReportRepository {
   /// Membangun payload JSON sesuai kontrak Django `POST /api/damage-reports/`
   /// (Revisi Zidan Bagian 4 & 5).
   ///
+  /// `client_report_id` ikut dikirim agar retry antrean offline bersifat
+  /// idempoten di server: laporan yang sudah diterima tidak dibuat ganda.
+  ///
   /// Mengembalikan `null` bila laporan tidak memiliki koordinat GPS valid agar
   /// aplikasi tidak pernah mengirim koordinat fiktif ke server.
   static Map<String, dynamic>? buildSyncPayload(DamageScanReport report) {
@@ -104,6 +121,7 @@ class DamageReportRepository {
     if (loc == null) return null;
 
     return {
+      'client_report_id': report.id,
       'latitude': loc.latitude,
       'longitude': loc.longitude,
       'damage_level': report.result.category.apiDamageLevel,
@@ -265,6 +283,117 @@ class DamageReportRepository {
         'Laporan gagal dihapus dari penyimpanan lokal. Silakan coba lagi.',
       );
     }
+  }
+
+  /// Mengambil riwayat laporan dari server dan menggabungkannya ke cache lokal.
+  ///
+  /// Aturan penggabungan:
+  /// - Laporan lokal yang masih `pendingSync` **menang**, agar tidak ada data
+  ///   lokal yang belum terkirim tertimpa status "synced" dari server.
+  /// - Laporan server yang belum ada di perangkat disimpan sebagai cermin
+  ///   `synced` (hanya metadata + `imageUrl`, tanpa salinan foto lokal).
+  ///
+  /// Melempar [DamageSyncException] bila sesi tidak ada atau jaringan gagal;
+  /// pemanggil tetap dapat menampilkan cache lokal sebagai fallback.
+  Future<List<DamageScanReport>> fetchRemoteReports() async {
+    final accessToken = accessTokenProvider != null
+        ? await accessTokenProvider!()
+        : await TokenManager.getAccessToken();
+
+    if (accessToken == null || accessToken.trim().isEmpty) {
+      throw const DamageSyncException(
+        'Masuk ke akun SIGAP untuk melihat laporan yang sudah tersimpan di server.',
+        needsLogin: true,
+      );
+    }
+
+    if (!await checkInternetAvailability()) {
+      throw const DamageSyncException(
+        'Tidak ada koneksi internet. Menampilkan riwayat yang tersimpan di perangkat.',
+      );
+    }
+
+    dynamic response;
+    try {
+      response = await ApiClient().get(
+        ApiConfig.myDamageReports,
+        requiresAuth: true,
+      );
+    } on ApiException catch (e) {
+      if (e.statusCode == 401 || e.statusCode == 403) {
+        throw const DamageSyncException(
+          'Sesi login sudah berakhir. Silakan masuk kembali untuk memuat riwayat server.',
+          needsLogin: true,
+        );
+      }
+      throw DamageSyncException(
+        'Gagal memuat riwayat dari server. ${e.firstErrorMessage}',
+      );
+    } catch (_) {
+      throw const DamageSyncException(
+        'Gagal memuat riwayat dari server. Menampilkan data lokal.',
+      );
+    }
+
+    final rows = _extractReportRows(response);
+    return mergeServerReports(rows);
+  }
+
+  /// Menggabungkan payload laporan server ke penyimpanan lokal.
+  ///
+  /// Dipisahkan dari [fetchRemoteReports] agar dapat diuji tanpa jaringan.
+  Future<List<DamageScanReport>> mergeServerReports(
+    List<Map<String, dynamic>> serverRows,
+  ) async {
+    final localReports = await _store.getAll();
+    final localById = <String, DamageScanReport>{
+      for (final report in localReports) report.id: report,
+    };
+
+    final merged = <String, DamageScanReport>{
+      for (final report in localReports) report.id: report,
+    };
+
+    for (final row in serverRows) {
+      final remote = DamageScanReport.fromServerJson(row);
+      if (remote.id.isEmpty) continue;
+
+      final local = localById[remote.id];
+      if (local == null) {
+        await _store.upsert(remote);
+        merged[remote.id] = remote;
+        continue;
+      }
+
+      // Status lokal yang belum terkirim tidak boleh ditimpa server.
+      if (local.syncStatus == DamageSyncStatus.pendingSync) continue;
+
+      final aligned = remote.copyWith(imagePath: local.imagePath);
+      await _store.upsert(aligned);
+      merged[remote.id] = aligned;
+    }
+
+    final result = merged.values.toList()
+      ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
+    reportsNotifier.value = List.unmodifiable(result);
+    return result;
+  }
+
+  /// Menormalkan amplop respons `GET /api/damage-reports/my/`.
+  ///
+  /// Endpoint mengembalikan array, tetapi [ApiClient] dapat mengembalikan peta
+  /// berpaginasi bila backend kelak menambahkan pagination.
+  static List<Map<String, dynamic>> _extractReportRows(dynamic response) {
+    if (response is List) {
+      return response.whereType<Map<String, dynamic>>().toList();
+    }
+    if (response is Map<String, dynamic>) {
+      final results = response['results'];
+      if (results is List) {
+        return results.whereType<Map<String, dynamic>>().toList();
+      }
+    }
+    return const [];
   }
 
   /// Mengecek konektivitas dan mencoba menyinkronkan antrean laporan `pendingSync`

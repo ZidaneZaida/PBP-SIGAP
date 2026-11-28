@@ -473,6 +473,39 @@ Alternatif SQL mentah (`DISTINCT ON`) memerlukan PostgreSQL — didukung penuh, 
 
 ---
 
+## 16. `damage_reports` (SIGAP-Vision)
+
+Laporan kerusakan bangunan hasil pemindaian on-device. Tabel ini menggantikan
+bayangan model `DamageReport` pada dokumen revisi arsitektur v2.1.
+
+| Kolom | Tipe | Constraint | Keterangan |
+|---|---|---|---|
+| `id` | UUID | PK | — |
+| `user_id` | UUID | FK → `accounts_user`, ON DELETE CASCADE | Warga pelapor |
+| `client_report_id` | VARCHAR(64) | default `''` | ID laporan versi aplikasi; unik per pengguna agar retry antrean offline idempoten |
+| `latitude` | FLOAT | NOT NULL | Divalidasi dalam bbox Kota Padang |
+| `longitude` | FLOAT | NOT NULL | Divalidasi dalam bbox Kota Padang |
+| `damage_level` | VARCHAR(20) | NOT NULL | `minor`, `moderate`, `critical` |
+| `confidence_score` | FLOAT | NOT NULL | 0.0–1.0 |
+| `description` | TEXT | default `''` | Ringkasan analisis/rekomendasi |
+| `image_url` | VARCHAR(500) | default `''` | Supabase Storage; kosong bila unggahan ditunda/gagal |
+| `is_verified_by_officer` | BOOLEAN | NULL, default NULL | NULL menunggu · TRUE sah · FALSE ditolak |
+| `verified_at` | TIMESTAMPTZ | NULL | Diisi saat petugas memutuskan |
+| `verified_by_id` | UUID | FK → `accounts_user`, NULL | Petugas BPBD |
+| `created_at` / `updated_at` | TIMESTAMPTZ | auto | — |
+
+**Index:** `(user_id, created_at DESC)`, `created_at DESC`, `is_verified_by_officer`
+
+**Constraint:** `uniq_dmg_user_client_report` — unik `(user_id, client_report_id)`
+bila `client_report_id <> ''`. Mencegah laporan ganda saat aplikasi mengirim
+ulang antrean offline, tanpa menghalangi laporan tanpa ID klien.
+
+**Catatan:** kolom `is_verified_by_officer` sengaja nullable agar antrean
+verifikasi cukup satu filter `IS NULL`; tidak ada tabel riwayat verifikasi
+terpisah — jejak keputusan dicatat di `audit_logs`.
+
+---
+
 ## Ringkasan Tabel
 
 | No | Tabel | Prioritas | Fase |
@@ -492,8 +525,9 @@ Alternatif SQL mentah (`DISTINCT ON`) memerlukan PostgreSQL — didukung penuh, 
 | 13 | `safety_statuses` | P0 | 2 |
 | 14 | `audit_logs` | P0 | 3 |
 | 15 | `incident_reports` | P1 | 4 |
+| 16 | `damage_reports` | P0 | 3 |
 
-**Total P0:** 14 tabel. `notification_preferences` tidak lagi terpisah (digabung ke `user_profiles`).
+**Total P0:** 15 tabel. `notification_preferences` tidak lagi terpisah (digabung ke `user_profiles`).
 
 ---
 

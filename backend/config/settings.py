@@ -46,6 +46,7 @@ LOCAL_APPS = [
     "apps.guides",
     "apps.family",
     "apps.notifications",
+    "apps.damage_assessment",
 ]
 
 INSTALLED_APPS = DJANGO_APPS + THIRD_PARTY_APPS + LOCAL_APPS
@@ -165,6 +166,11 @@ REST_FRAMEWORK = {
         "login": "5/10min",
         "register": "20/hour",
         "password_reset": "5/hour",
+        # Laporan kerusakan dikirim saat koneksi pulih; batas longgar tapi
+        # tetap mencegah satu klien membanjiri antrean verifikasi BPBD.
+        "damage_report": "30/hour",
+        # Heatmap publik: endpoint agregasi, wajib dibatasi per IP.
+        "public_heatmap": "60/min",
     },
     "TEST_REQUEST_DEFAULT_FORMAT": "json",
 }
@@ -257,6 +263,7 @@ FIREBASE_CREDENTIALS_JSON = env("FIREBASE_CREDENTIALS_JSON", default="")
 SUPABASE_URL = env("SUPABASE_URL", default="")
 SUPABASE_SERVICE_KEY = env("SUPABASE_SERVICE_KEY", default="")
 SUPABASE_BUCKET_AVATARS = env("SUPABASE_BUCKET_AVATARS", default="avatars")
+SUPABASE_BUCKET_DAMAGE = env("SUPABASE_BUCKET_DAMAGE", default="damage-reports")
 
 INTERNAL_SYNC_TOKEN = env("INTERNAL_SYNC_TOKEN", default="")
 FRONTEND_BASE_URL = env("FRONTEND_BASE_URL", default="http://localhost:3000")

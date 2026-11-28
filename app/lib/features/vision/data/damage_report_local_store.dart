@@ -135,6 +135,7 @@ CREATE TABLE $tableName (
       result: result,
       syncStatus: syncStatus,
       syncedAt: syncedAt,
+      imageUrl: baseReport?.imageUrl,
     );
   }
 

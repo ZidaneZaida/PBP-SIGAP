@@ -615,6 +615,17 @@ Semua field opsional. `author_id` **tetap** penerbit awal.
 
 ---
 
+### `GET /api/shelters/tsunami/` 🔓
+
+Daftar Tempat Evakuasi Sementara (TES) tsunami Kota Padang. Memakai ulang
+`AssistancePoint` dengan `category=evacuation_point` dan
+`verification_status=verified`, diurutkan dari `capacity` terbesar.
+
+**Response 200:** array (tanpa pagination) berisi item `AssistancePoint`.
+Shelter yang belum diverifikasi BPBD sengaja tidak ditampilkan.
+
+---
+
 ### `POST /api/officer/assistance-points/` 👮
 
 ```json
@@ -942,7 +953,147 @@ Hapus grup (khusus admin grup). Menghapus semua `family_memberships` dan `safety
 
 ---
 
-## 9. Laporan Warga (P1 — Fase 4)
+## 9. Penilaian Kerusakan Bangunan (SIGAP-Vision)
+
+Modul `apps.damage_assessment` — laporan hasil pemindaian kerusakan bangunan
+dari aplikasi Flutter. Alur: warga kirim laporan → petugas BPBD verifikasi →
+laporan terverifikasi muncul di heatmap publik.
+
+Status verifikasi (`is_verified_by_officer`):
+`null` = menunggu · `true` = sah, tampil di heatmap · `false` = ditolak.
+
+### `POST /api/damage-reports/` 🔒
+
+Mendukung `application/json` atau `multipart/form-data` (bila menyertakan foto).
+
+| Field | Wajib | Keterangan |
+|---|---|---|
+| `latitude` | ✅ | Harus di dalam bbox Kota Padang (-1.10..-0.75) |
+| `longitude` | ✅ | Harus di dalam bbox Kota Padang (100.25..100.55) |
+| `damage_level` | ✅ | `minor`, `moderate`, `critical` |
+| `confidence_score` | ✅ | Float 0.0–1.0 (bukan persentase) |
+| `description` | ❌ | Ringkasan analisis |
+| `image` | ❌ | JPEG/PNG, maks 5 MB. Bila gagal diunggah, laporan tetap tersimpan |
+| `client_report_id` | ❌ | ID laporan versi aplikasi (maks 64 karakter). Kirim ulang dengan nilai sama → server mengembalikan laporan yang sudah ada (HTTP 200), bukan membuat duplikat |
+
+Throttle: `30/hour` per pengguna.
+
+**Response 201:**
+```json
+{
+  "status": "success",
+  "message": "Laporan kerusakan diterima dan menunggu verifikasi petugas.",
+  "data": {
+    "id": "uuid",
+    "damage_level": "moderate",
+    "damage_level_display": "Sedang (Waspada Dinding)",
+    "confidence_score": 0.82,
+    "latitude": -0.9481,
+    "longitude": 100.3529,
+    "description": "Retak diagonal pada dinding bata sisi timur.",
+    "image_url": "",
+    "is_verified_by_officer": null,
+    "created_at": "2026-11-28T05:00:00Z"
+  }
+}
+```
+
+**Response 400** (contoh koordinat di luar Padang):
+```json
+{ "status": "error", "errors": { "latitude": ["Lokasi di luar wilayah layanan Kota Padang."] } }
+```
+
+---
+
+### `GET /api/damage-reports/` 🔒
+
+Riwayat pengguna yang sedang masuk (maks 100 terbaru). Sama dengan
+`GET /api/damage-reports/my/` — path `/my/` disediakan untuk aplikasi Flutter.
+
+---
+
+### `GET /api/damage-reports/my/` 🔒
+
+Alias baca riwayat milik pengguna sendiri. Data warga lain tidak pernah
+dikembalikan lewat endpoint ini.
+
+---
+
+### `GET /api/damage-reports/heatmap/` 🔓
+
+Agregat titik kerusakan **terverifikasi** untuk layer peta. Laporan tertunda dan
+ditolak tidak ikut dihitung, tetapi jumlahnya tersedia di `summary` sebagai
+indikator antrean.
+
+Pengelompokan memakai grid `0.005°` (≈550 m); `dominant_level` adalah tingkat
+kerusakan terberat yang dominan di titik tersebut.
+
+Throttle: `60/min` per IP. Hasil di-cache 30 detik; cache dikosongkan otomatis
+setiap kali petugas memverifikasi/menolak laporan.
+
+**Response 200:**
+```json
+{
+  "status": "success",
+  "data": {
+    "points": [
+      {
+        "latitude": -0.95,
+        "longitude": 100.35,
+        "total": 3,
+        "dominant_level": "critical",
+        "by_level": { "minor": 1, "critical": 2 },
+        "last_reported_at": "2026-11-28T05:00:00Z"
+      }
+    ],
+    "summary": {
+      "total_verified": 3,
+      "total_pending": 1,
+      "total_rejected": 0,
+      "last_reported_at": "2026-11-28T05:00:00Z",
+      "by_level": [{ "damage_level": "critical", "count": 2 }],
+      "generated_at": "2026-11-28T05:10:00Z"
+    },
+    "grid_degrees": 0.005
+  }
+}
+```
+
+---
+
+### `GET /api/officer/damage-reports/pending/` 👮
+
+Antrean laporan menunggu verifikasi, terlama lebih dulu (maks 100).
+
+---
+
+### `PATCH /api/officer/damage-reports/{id}/verify/` 👮
+
+```json
+{ "approved": true, "note": "Cocok dengan foto, retak pada kolom." }
+```
+
+| Field | Wajib | Keterangan |
+|---|---|---|
+| `approved` | ✅ | `true` verifikasi (masuk heatmap), `false` tolak |
+| `note` | ❌ | Maks 500 karakter, disimpan di `audit_logs` |
+
+Setiap keputusan dicatat sebagai `verify_damage_report` /
+`reject_damage_report` di audit log.
+
+**Response 200:** data laporan terbaru + `message` sesuai keputusan.
+
+---
+
+### Endpoint lain (bucket Supabase)
+
+Foto kerusakan diunggah ke bucket object storage terpisah dari avatar. Set
+`SUPABASE_BUCKET_DAMAGE` (default `damage-reports`) di environment backend, dan
+pastikan bucket tersebut ada serta bersifat public-read.
+
+---
+
+## 10. Laporan Warga (P1 — Fase 4)
 
 ### `POST /api/reports/` 🔒
 
@@ -978,7 +1129,7 @@ Paginated. Setiap item menyertakan `moderation_status` dan `review_notes`.
 
 ---
 
-## 10. Django Admin
+## 11. Django Admin
 
 URL: `https://sigap-backend.onrender.com/admin/`
 
@@ -999,7 +1150,7 @@ Admin hanya untuk `is_staff=True`. Semua aksi tercatat di `audit_logs`.
 
 ---
 
-## 11. Endpoint Internal
+## 12. Endpoint Internal
 
 ### `POST /api/internal/sync-bmkg/`
 
@@ -1014,7 +1165,7 @@ Header wajib: `X-Internal-Token: $INTERNAL_SYNC_TOKEN`
 
 ---
 
-## 12. Ringkasan Endpoint
+## 13. Ringkasan Endpoint
 
 | Method | Endpoint | Auth | Keterangan |
 |---|---|---|---|
@@ -1047,6 +1198,7 @@ Header wajib: `X-Internal-Token: $INTERNAL_SYNC_TOKEN`
 | GET | `/api/map/nearby/` | 🔓 | Radius (haversine) |
 | GET | `/api/map/risk-zones/` | 🔓 | GeoJSON layer |
 | GET | `/api/assistance-points/` | 🔓 | Semua titik bantuan |
+| GET | `/api/shelters/tsunami/` | 🔓 | **Baru** — TES terverifikasi |
 | POST | `/api/officer/assistance-points/` | 👮 | Tambah titik |
 | PATCH | `/api/officer/assistance-points/{id}/` | 👮 | Update titik |
 | POST | `/api/officer/risk-zones/` | 👮 | **Baru** — tambah zona |
@@ -1068,6 +1220,12 @@ Header wajib: `X-Internal-Token: $INTERNAL_SYNC_TOKEN`
 | GET | `/api/guides/` | 🔓 | Panduan |
 | POST | `/api/reports/` | 🔒 | Laporan warga (P1) |
 | GET | `/api/reports/my-reports/` | 🔒 | Riwayat laporan (P1) |
+| POST | `/api/damage-reports/` | 🔒 | **Baru** — sinkron laporan kerusakan |
+| GET | `/api/damage-reports/` | 🔒 | **Baru** — riwayat laporan kerusakan |
+| GET | `/api/damage-reports/my/` | 🔒 | **Baru** — alias riwayat (dipakai Flutter) |
+| GET | `/api/damage-reports/heatmap/` | 🔓 | **Baru** — heatmap kerusakan publik |
+| GET | `/api/officer/damage-reports/pending/` | 👮 | **Baru** — antrean verifikasi |
+| PATCH | `/api/officer/damage-reports/{id}/verify/` | 👮 | **Baru** — verifikasi/tolak |
 | POST | `/api/internal/sync-bmkg/` | token | Opsional, penjadwal eksternal |
 
-**Total:** 51 endpoint. **Baru dari versi 1.0:** 13 endpoint (ditandai **Baru**).
+**Total:** 57 endpoint. **Baru dari versi 1.0:** 19 endpoint (ditandai **Baru**).
