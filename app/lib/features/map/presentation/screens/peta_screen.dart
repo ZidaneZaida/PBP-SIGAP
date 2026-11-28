@@ -8,6 +8,7 @@ import 'package:sigap/core/theme/app_colors.dart';
 import 'package:sigap/features/alerts/presentation/screens/alerts_screen.dart';
 import 'package:sigap/features/family/presentation/screens/keluarga_screen.dart';
 import 'package:sigap/features/dashboard/presentation/screens/home_screen.dart';
+import 'package:sigap/features/map/data/map_layer_repository.dart';
 import 'package:sigap/features/settings/presentation/screens/pengaturan_screen.dart';
 import 'package:sigap/features/profile/presentation/screens/profile_screen.dart';
 
@@ -94,6 +95,13 @@ class _PetaScreenState extends State<PetaScreen>
   // Shelter / Lokasi Terpilih untuk Bottom Sheet Navigasi
   late PadangMapLocation _selectedLocation;
   bool _isNavigating = false;
+
+  // Layer server (zona risiko + heatmap kerusakan). Kosong = pakai data bawaan.
+  final MapLayerRepository _layerRepository = MapLayerRepository.instance;
+  List<RiskZoneLayer> _serverZones = const [];
+  List<DamageHeatmapPoint> _damagePoints = const [];
+  bool _isServerLayerActive =
+      false; // true bila polygon server berhasil dimuat
 
   // Animasi pulsing untuk titik biru "My Location"
   late AnimationController _pulseController;
@@ -241,6 +249,25 @@ class _PetaScreenState extends State<PetaScreen>
     _pulseAnimation = Tween<double>(begin: 0.6, end: 1.25).animate(
       CurvedAnimation(parent: _pulseController, curve: Curves.easeInOut),
     );
+
+    // Data server dimuat di latar belakang; polygon bawaan tetap tampil dulu
+    // agar peta tidak kosong saat offline atau server lambat.
+    _loadServerLayers();
+  }
+
+  /// Memuat layer zona risiko & heatmap kerusakan dari backend.
+  ///
+  /// Gagal-aman: bila server tidak dapat dijangkau, daftar tetap kosong dan
+  /// peta melanjutkan dengan polygon bawaan aplikasi.
+  Future<void> _loadServerLayers() async {
+    final zones = await _layerRepository.fetchTsunamiZones();
+    final damagePoints = await _layerRepository.fetchDamageHeatmap();
+    if (!mounted) return;
+    setState(() {
+      _serverZones = zones;
+      _damagePoints = damagePoints;
+      _isServerLayerActive = zones.isNotEmpty;
+    });
   }
 
   @override
@@ -388,9 +415,79 @@ class _PetaScreenState extends State<PetaScreen>
     }
   }
 
+  /// Polygon zona tsunami bawaan aplikasi.
+  ///
+  /// Dipakai hanya sebagai cadangan saat layer server belum/tidak tersedia,
+  /// supaya warga tetap melihat gambaran zona bahaya walau offline.
+  static List<Polygon> get _fallbackTsunamiPolygons => [
+    // Zona Merah Tsunami (pesisir Padang, 0-1 km dari garis pantai).
+    Polygon(
+      points: [
+        LatLng(-0.8800, 100.3350),
+        LatLng(-0.9100, 100.3450),
+        LatLng(-0.9450, 100.3500),
+        LatLng(-0.9700, 100.3550),
+        LatLng(-0.9750, 100.3700),
+        LatLng(-0.9400, 100.3650),
+        LatLng(-0.9000, 100.3580),
+        LatLng(-0.8750, 100.3450),
+      ],
+      color: const Color(0xFFEF4444).withValues(alpha: 0.28),
+      borderColor: const Color(0xFFDC2626),
+      borderStrokeWidth: 2.5,
+    ),
+    // Zona Hijau Aman Evakuasi (>15 mdpl: wilayah Timur / Bypass).
+    Polygon(
+      points: [
+        LatLng(-0.8800, 100.3700),
+        LatLng(-0.9200, 100.3800),
+        LatLng(-0.9600, 100.3950),
+        LatLng(-0.9700, 100.4300),
+        LatLng(-0.9000, 100.4200),
+        LatLng(-0.8700, 100.3900),
+      ],
+      color: const Color(0xFF10B981).withValues(alpha: 0.22),
+      borderColor: const Color(0xFF059669),
+      borderStrokeWidth: 2.0,
+    ),
+  ];
+
+  /// Memetakan zona risiko server menjadi polygon berwarna sesuai tingkatnya.
+  static Polygon _polygonFromServerZone(RiskZoneLayer zone) {
+    final isSafe = zone.riskLevel == 'low' || zone.riskLevel == 'safe';
+    return Polygon(
+      points: zone.points,
+      color: (isSafe ? const Color(0xFF10B981) : const Color(0xFFEF4444))
+          .withValues(alpha: 0.25),
+      borderColor: isSafe
+          ? const Color(0xFF059669)
+          : const Color(0xFFDC2626),
+      borderStrokeWidth: 2.0,
+    );
+  }
+
+  /// Memetakan titik heatmap kerusakan menjadi lingkaran peta.
+  ///
+  /// Radius tumbuh logaritmis terhadap jumlah laporan agar satu area dengan
+  /// puluhan laporan tidak menutupi seluruh peta.
+  static CircleMarker _circleFromDamagePoint(DamageHeatmapPoint point) {
+    final color = switch (point.dominantLevel) {
+      'critical' => const Color(0xFFDC2626),
+      'moderate' => const Color(0xFFF59E0B),
+      _ => const Color(0xFFEAB308),
+    };
+    final radius = (8 + point.total.clamp(1, 50) * 1.6).toDouble();
+    return CircleMarker(
+      point: point.position,
+      radius: radius,
+      color: color.withValues(alpha: 0.55),
+      borderColor: color,
+      borderStrokeWidth: 1.5,
+    );
+  }
+
   // Filter lokasi berdasarkan search input dan kategori aktif
-  List<PadangMapLocation> get _filteredLocations {
-    final query = _searchController.text.trim().toLowerCase();
+  List<PadangMapLocation> get _filteredLocations {    final query = _searchController.text.trim().toLowerCase();
     return _locations.where((loc) {
       final matchesCategory =
           _selectedCategory == 'tsunami' || loc.category == _selectedCategory;
@@ -582,44 +679,23 @@ class _PetaScreenState extends State<PetaScreen>
           minZoom: 11,
         ),
 
-        // Layer Zona Bahaya Tsunami (Jika filter Zona Tsunami aktif)
+        // Layer Zona Tsunami: data server bila tersedia, selain itu polygon bawaan.
         if (_selectedCategory == 'tsunami') ...[
-          PolygonLayer(
-            polygons: [
-              // Zona Merah Tsunami (Pesisir Pantai Padang / Muara Batang Arau s/d Jl. Veteran)
-              Polygon(
-                points: const [
-                  LatLng(-0.8800, 100.3350),
-                  LatLng(-0.9100, 100.3450),
-                  LatLng(-0.9450, 100.3500),
-                  LatLng(-0.9700, 100.3550),
-                  LatLng(-0.9750, 100.3700),
-                  LatLng(-0.9400, 100.3650),
-                  LatLng(-0.9000, 100.3580),
-                  LatLng(-0.8750, 100.3450),
-                ],
-                color: const Color(0xFFEF4444).withValues(alpha: 0.28),
-                borderColor: const Color(0xFFDC2626),
-                borderStrokeWidth: 2.5,
-              ),
-
-              // Zona Hijau Aman Evakuasi (>15 mdpl: Wilayah Timur / By Pass)
-              Polygon(
-                points: const [
-                  LatLng(-0.8800, 100.3700),
-                  LatLng(-0.9200, 100.3800),
-                  LatLng(-0.9600, 100.3950),
-                  LatLng(-0.9700, 100.4300),
-                  LatLng(-0.9000, 100.4200),
-                  LatLng(-0.8700, 100.3900),
-                ],
-                color: const Color(0xFF10B981).withValues(alpha: 0.22),
-                borderColor: const Color(0xFF059669),
-                borderStrokeWidth: 2.0,
-              ),
-            ],
-          ),
+          if (_isServerLayerActive)
+            PolygonLayer(
+              polygons: _serverZones.map(_polygonFromServerZone).toList(),
+            )
+          else
+            PolygonLayer(
+              polygons: _fallbackTsunamiPolygons,
+            ),
         ],
+
+        // Layer Heatmap Kerusakan Bangunan (laporan warga terverifikasi BPBD)
+        if (_selectedCategory == 'tsunami' && _damagePoints.isNotEmpty)
+          CircleLayer(
+            circles: _damagePoints.map(_circleFromDamagePoint).toList(),
+          ),
 
         // Polyline Rute Evakuasi Jalan Kaki (Ketika user menekan tombol Mulai Rute)
         if (_isNavigating) ...[

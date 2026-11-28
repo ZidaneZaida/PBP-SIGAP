@@ -143,6 +143,29 @@ class OfficerRiskZoneDetailView(APIView):
         return ok(RiskZoneSerializer(zone).data, "Zona risiko diperbarui")
 
 
+class TsunamiShelterListView(APIView):
+    """Daftar titik evakuasi tsunami (TES) resmi Kota Padang.
+
+    Memakai ulang [AssistancePoint] berkategori ``evacuation_point`` yang sudah
+    terverifikasi, bukan model shelter terpisah: kategori dan status verifikasi
+    sudah cukup membedakan shelter tsunami dari posko biasa.
+    """
+
+    permission_classes = [AllowAny]
+
+    def get(self, request):
+        """Shelter aktif + terverifikasi, diurutkan dari kapasitas terbesar."""
+        qs = (
+            AssistancePoint.objects.filter(
+                is_active=True,
+                category=AssistancePoint.Category.EVACUATION_POINT,
+                verification_status=AssistancePoint.Verification.VERIFIED,
+            )
+            .order_by("-capacity", "name")
+        )
+        return ok(AssistancePointSerializer(qs, many=True).data)
+
+
 def _float_param(request, name, default=None):
     raw = request.query_params.get(name)
     if raw in (None, ""):

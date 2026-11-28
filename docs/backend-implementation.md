@@ -14,6 +14,7 @@
 | M2 · Konten publik | ✅ Terverifikasi lokal | alerts + lazy BMKG, news, map, guides, dashboard, seed |
 | M3 · Keluarga & FCM | ✅ Terverifikasi lokal | 13 endpoint family, FCM client |
 | M4 · Audit & otorisasi | ✅ Terverifikasi lokal | `audit_logs`, mixin, admin, permission role |
+| M4b · SIGAP-Vision (BE) | ✅ Terverifikasi lokal | app `damage_assessment`: model `DamageReport`, sinkron laporan, heatmap, shelter TES, verifikasi petugas |
 | M5 · Deploy | ⬜ Belum | render.yaml, CI |
 | M6 · Integrasi Flutter | ⬜ Belum | `app/lib/core/network/` |
 
@@ -24,7 +25,7 @@
 | `manage.py check` | 0 issue |
 | `manage.py migrate` | semua migrasi OK (termasuk `common.0001`) |
 | `manage.py seed_demo` | 2 sumber, 6 kontak, 12 titik, 9 panduan |
-| `manage.py test --noinput` | **33 test lulus** |
+| `manage.py test --noinput` | **46 test lulus** |
 | `ruff check .` | bersih |
 | `curl /api/health/` | `{"db":"ok"}` |
 | `curl /api/guides/`, `/assistance-points/`, `/emergency-contacts/` | data seed tampil |
@@ -48,6 +49,7 @@ backend/
 ├── apps/map/                   AssistancePoint, RiskZone (GeoJSON), nearby haversine
 ├── apps/guides/                EmergencyContact, Guide
 ├── apps/family/                FamilyGroup, FamilyMembership(approval), SafetyStatus
+├── apps/damage_assessment/     DamageReport, sinkron Vision, heatmap grid, verifikasi petugas
 └── apps/notifications/fcm.py   kirim FCM; aman bila kredensial kosong
 ```
 
@@ -125,6 +127,19 @@ Verifikasi: `curl http://127.0.0.1:8000/api/health/`
 3. Tempel isi JSON (satu baris) ke `FIREBASE_CREDENTIALS_JSON` di `.env`.
 
 Bila dikosongkan, `fcm.send_*` mengembalikan 0 dan mencatat log — endpoint tetap sukses.
+
+### 3.7 Bucket foto kerusakan (opsional, untuk SIGAP-Vision)
+
+Laporan kerusakan menerima foto lewat `POST /api/damage-reports/` (`multipart/form-data`).
+
+1. Supabase Dashboard → Storage → buat bucket `damage-reports`, set public-read.
+2. Isi `.env`:
+   ```env
+   SUPABASE_URL=https://<ref>.supabase.co
+   SUPABASE_SERVICE_KEY=<service-role-key>
+   SUPABASE_BUCKET_DAMAGE=damage-reports
+   ```
+3. Bila kosong, laporan tetap tersimpan dengan `image_url` kosong (foto bersifat opsional).
 
 ---
 

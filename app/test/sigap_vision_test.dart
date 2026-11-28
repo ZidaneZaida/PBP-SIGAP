@@ -96,6 +96,36 @@ File _createDarkTestImageSync(Directory dir, String name) {
   return file;
 }
 
+/// Membuat laporan uji dengan nilai default ringkas.
+DamageScanReport _buildReport({
+  required String id,
+  required DamageSyncStatus status,
+  String summary = 'Ringkasan uji.',
+  DamageCategory category = DamageCategory.sedang,
+}) {
+  return DamageScanReport(
+    id: id,
+    imagePath: '',
+    createdAt: DateTime(2026, 11, 21, 10),
+    location: VisionLocationData(
+      latitude: -0.9492,
+      longitude: 100.3542,
+      displayLabel: 'Padang Barat',
+      capturedAt: DateTime(2026, 11, 21, 10),
+    ),
+    result: DamageClassificationResult(
+      category: category,
+      confidenceScore: 0.8,
+      summary: summary,
+      recommendations: const [],
+      isSimulation: true,
+      classifierName: 'Mock',
+      analyzedAt: DateTime(2026, 11, 21, 10),
+    ),
+    syncStatus: status,
+  );
+}
+
 Future<void> _flushRealIo(WidgetTester tester, {int cycles = 6}) async {
   for (int i = 0; i < cycles; i++) {
     await tester.runAsync(() async {
@@ -233,6 +263,122 @@ void main() {
       await repo.deleteReport('rep_1');
       final afterDelete = await repo.loadReports();
       expect(afterDelete, isEmpty);
+    });
+
+    test('buildSyncPayload menyertakan client_report_id agar retry idempoten', () {
+      final report = DamageScanReport(
+        id: 'vision_1730000000000',
+        imagePath: '/tmp/a.jpg',
+        createdAt: DateTime(2026, 11, 21),
+        location: VisionLocationData(
+          latitude: -0.9492,
+          longitude: 100.3542,
+          displayLabel: 'Padang Barat',
+          capturedAt: DateTime(2026, 11, 21),
+        ),
+        result: DamageClassificationResult(
+          category: DamageCategory.sedang,
+          confidenceScore: 0.8,
+          summary: 'Ringkasan.',
+          recommendations: const [],
+          isSimulation: true,
+          classifierName: 'Mock',
+          analyzedAt: DateTime(2026, 11, 21),
+        ),
+        syncStatus: DamageSyncStatus.pendingSync,
+      );
+
+      final payload = DamageReportRepository.buildSyncPayload(report);
+      expect(payload?['client_report_id'], 'vision_1730000000000');
+
+      // Laporan tanpa koordinat GPS tidak boleh dikirim (tidak ada lokasi palsu).
+      final withoutLocation = DamageScanReport(
+        id: report.id,
+        imagePath: report.imagePath,
+        createdAt: report.createdAt,
+        result: report.result,
+        syncStatus: report.syncStatus,
+      );
+      expect(
+        DamageReportRepository.buildSyncPayload(withoutLocation),
+        isNull,
+      );
+    });
+
+    test('mergeServerReports tidak menimpa laporan lokal yang belum terkirim', () async {
+      final repo = DamageReportRepository(
+        directoryProvider: () async => tempDir,
+        internetChecker: () async => true,
+        localStore: SharedPrefsFallbackDamageReportStore(),
+        autoStartOnUse: false,
+      );
+
+      await repo.saveReport(
+        _buildReport(
+          id: 'vision_pending',
+          status: DamageSyncStatus.pendingSync,
+          summary: 'Ringkasan lokal asli.',
+        ),
+      );
+
+      final merged = await repo.mergeServerReports([
+        {
+          'id': 'server-1',
+          'client_report_id': 'vision_pending',
+          'damage_level': 'critical',
+          'confidence_score': 0.95,
+          'latitude': -0.9492,
+          'longitude': 100.3542,
+          'description': 'Versi server.',
+          'image_url': 'https://example.com/a.jpg',
+          'is_verified_by_officer': null,
+          'created_at': '2026-11-21T12:00:00Z',
+        },
+        {
+          'id': 'server-2',
+          'client_report_id': 'vision_lain',
+          'damage_level': 'minor',
+          'confidence_score': 0.7,
+          'latitude': -0.95,
+          'longitude': 100.35,
+          'description': 'Hanya ada di server.',
+          'image_url': '',
+          'is_verified_by_officer': true,
+          'created_at': '2026-11-20T12:00:00Z',
+        },
+      ]);
+
+      final pending = merged.firstWhere((r) => r.id == 'vision_pending');
+      expect(pending.syncStatus, DamageSyncStatus.pendingSync);
+      expect(pending.result.summary, 'Ringkasan lokal asli.');
+
+      final remoteOnly = merged.firstWhere((r) => r.id == 'vision_lain');
+      expect(remoteOnly.syncStatus, DamageSyncStatus.synced);
+      expect(remoteOnly.isRemoteOnly, isFalse, reason: 'tanpa image_url');
+      expect(
+        merged.any((r) => r.id == 'vision_pending' && r.isRemoteOnly),
+        isFalse,
+      );
+    });
+
+    test('fetchRemoteReports meminta login bila token tidak tersedia', () async {
+      final repo = DamageReportRepository(
+        directoryProvider: () async => tempDir,
+        internetChecker: () async => true,
+        accessTokenProvider: () async => null,
+        autoStartOnUse: false,
+      );
+
+      expect(
+        () => repo.fetchRemoteReports(),
+        throwsA(
+          isA<DamageSyncException>().having(
+            (e) => e.needsLogin,
+            'needsLogin',
+            isTrue,
+          ),
+        ),
+      );
     });
 
     test('DamageCategory.fromName mengenali nilai lama maupun spesifikasi revisi Zidan', () {

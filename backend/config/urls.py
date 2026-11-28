@@ -13,6 +13,7 @@ urlpatterns = [
     path("api/", include("apps.map.urls")),
     path("api/", include("apps.guides.urls")),
     path("api/", include("apps.family.urls")),
+    path("api/", include("apps.damage_assessment.urls")),
 ]
 
 admin.site.site_header = "SIGAP — Siaga Bencana Kota Padang"

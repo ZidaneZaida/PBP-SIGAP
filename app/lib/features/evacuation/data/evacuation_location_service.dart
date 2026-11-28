@@ -1,7 +1,11 @@
 import 'dart:async';
+import 'package:flutter/foundation.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:permission_handler/permission_handler.dart';
+import 'package:sigap/core/network/api_client.dart';
+import 'package:sigap/core/network/api_config.dart';
+import '../domain/evacuation_models.dart';
 import 'padang_evacuation_data.dart';
 
 /// Hasil pengambilan posisi GPS untuk panduan evakuasi tsunami.
@@ -130,5 +134,88 @@ class DefaultEvacuationLocationService implements EvacuationLocationService {
             'Lokasi GPS perangkat tidak tersedia saat ini. Menggunakan koordinat perkiraan Padang Barat; tekan "Perbarui GPS" untuk mencoba lagi.',
       );
     }
+  }
+}
+
+/// Sumber katalog titik evakuasi untuk layar Panduan Evakuasi.
+///
+/// Strategi offline-first: katalog bawaan aplikasi ([PadangEvacuationData])
+/// selalu menjadi cadangan. Data server hanya menggantikan **shelter TES**,
+/// karena zona aman horizontal (>10 mdpl) belum tersedia di backend dan tetap
+/// dipakai dari data elevasi yang dibundel.
+class EvacuationPointRepository {
+  static final EvacuationPointRepository instance = EvacuationPointRepository();
+
+  final ApiClient? client;
+
+  EvacuationPointRepository({this.client});
+
+  ApiClient get _api => client ?? ApiClient();
+
+  /// Mengambil shelter TES terverifikasi dari `GET /api/shelters/tsunami/`.
+  ///
+  /// Mengembalikan daftar kosong bila jaringan gagal, sehingga pemanggil
+  /// memakai katalog bawaan tanpa menampilkan galat ke pengguna.
+  Future<List<EvacuationPoint>> fetchShelters() async {
+    try {
+      final response = await _api.get(
+        ApiConfig.tsunamiShelters,
+        requiresAuth: false,
+      );
+      if (response is! List) return const [];
+
+      return response
+          .whereType<Map<String, dynamic>>()
+          .map(_toEvacuationPoint)
+          .whereType<EvacuationPoint>()
+          .toList();
+    } catch (e) {
+      debugPrint('Gagal memuat shelter TES dari server: $e');
+      return const [];
+    }
+  }
+
+  /// Menggabungkan shelter server dengan katalog bawaan.
+  ///
+  /// Shelter server menang bila `id`-nya sama; shelter bawaan yang tidak ada di
+  /// server tetap dipertahankan agar panduan evakuasi tidak kehilangan tujuan
+  /// saat data server belum lengkap.
+  static List<EvacuationPoint> mergeWithDefaults(
+    List<EvacuationPoint> serverShelters,
+  ) {
+    if (serverShelters.isEmpty) return PadangEvacuationData.tesShelters;
+
+    final byId = <String, EvacuationPoint>{
+      for (final point in PadangEvacuationData.tesShelters) point.id: point,
+      for (final point in serverShelters) point.id: point,
+    };
+    return byId.values.toList();
+  }
+
+  /// Mengonversi satu item `AssistancePoint` menjadi [EvacuationPoint].
+  ///
+  /// Backend tidak menyimpan elevasi, jadi `elevationMeters` diisi 0 dan label
+  /// elevasi tidak diklaim. Kapasitas memakai field `capacity` (bila ada).
+  static EvacuationPoint? _toEvacuationPoint(Map<String, dynamic> json) {
+    final lat = (json['latitude'] as num?)?.toDouble();
+    final lng = (json['longitude'] as num?)?.toDouble();
+    final id = json['id']?.toString() ?? '';
+    if (lat == null || lng == null || id.isEmpty) return null;
+    if (lat.abs() > 90 || lng.abs() > 180) return null;
+
+    final capacity = (json['capacity'] as num?)?.toInt();
+    final address = (json['address'] as String? ?? '').trim();
+
+    return EvacuationPoint(
+      id: 'server_$id',
+      name: json['name']?.toString() ?? 'Tempat Evakuasi',
+      type: EvacuationPointType.verticalTes,
+      latitude: lat,
+      longitude: lng,
+      elevationMeters: 0,
+      elevationLabel: 'Elevasi belum terdata',
+      capacityLabel: capacity != null ? '$capacity jiwa' : 'Kapasitas belum terdata',
+      routeNote: address.isEmpty ? 'Lokasi evakuasi resmi BPBD Kota Padang.' : address,
+    );
   }
 }

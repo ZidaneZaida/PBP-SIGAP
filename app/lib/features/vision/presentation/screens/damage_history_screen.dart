@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -42,6 +43,8 @@ class _DamageHistoryScreenState extends State<DamageHistoryScreen> {
   bool _isLoading = true;
   bool _isCheckingSync = false;
   String? _loadError;
+  String? _remoteError;
+  bool _isLoadingRemote = false;
   List<DamageScanReport> _reports = const [];
 
   @override
@@ -80,6 +83,8 @@ class _DamageHistoryScreenState extends State<DamageHistoryScreen> {
         _reports = list;
         _isLoading = false;
       });
+      // Riwayat lokal tampil lebih dulu; server menyusul tanpa memblokir UI.
+      unawaited(_loadRemoteReports());
     } on DamageStorageException catch (e) {
       if (!mounted) return;
       setState(() {
@@ -92,6 +97,31 @@ class _DamageHistoryScreenState extends State<DamageHistoryScreen> {
         _loadError = 'Gagal memuat riwayat pemindaian lokal.';
         _isLoading = false;
       });
+    }
+  }
+
+  /// Memuat riwayat dari server lalu menggabungkannya dengan cache lokal.
+  ///
+  /// Kegagalan jaringan/sesi tidak mengosongkan daftar: pengguna tetap melihat
+  /// laporan lokal, dan alasannya ditampilkan sebagai banner yang bisa ditutup.
+  Future<void> _loadRemoteReports() async {
+    if (_isLoadingRemote) return;
+    _isLoadingRemote = true;
+    try {
+      final merged = await _repository.fetchRemoteReports();
+      if (!mounted) return;
+      setState(() {
+        _reports = merged;
+        _remoteError = null;
+      });
+    } on DamageSyncException catch (e) {
+      if (!mounted) return;
+      setState(() => _remoteError = e.message);
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _remoteError = 'Riwayat server tidak dapat dimuat.');
+    } finally {
+      _isLoadingRemote = false;
     }
   }
 
@@ -145,14 +175,35 @@ class _DamageHistoryScreenState extends State<DamageHistoryScreen> {
   }
 
   Future<void> _confirmDelete(DamageScanReport report) async {
+    // Laporan yang hanya ada di server tidak punya salinan lokal untuk dihapus;
+    // memanggil delete di sini hanya akan membuatnya muncul lagi setelah sync.
+    if (report.isRemoteOnly) {
+      ScaffoldMessenger.of(context).clearSnackBars();
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          behavior: SnackBarBehavior.floating,
+          backgroundColor: const Color(0xFF92400E),
+          content: Text(
+            'Laporan ini tersimpan di server dan tidak dapat dihapus dari perangkat.',
+            style: GoogleFonts.plusJakartaSans(
+              fontWeight: FontWeight.w700,
+              color: Colors.white,
+            ),
+          ),
+        ),
+      );
+      return;
+    }
+
     HapticFeedback.mediumImpact();
+    final isSynced = report.syncStatus == DamageSyncStatus.synced;
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
         backgroundColor: Colors.white,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
         title: Text(
-          'Hapus Laporan Ini?',
+          isSynced ? 'Hapus Salinan Lokal?' : 'Hapus Laporan Ini?',
           style: GoogleFonts.plusJakartaSans(
             fontSize: 17,
             fontWeight: FontWeight.w800,
@@ -160,7 +211,9 @@ class _DamageHistoryScreenState extends State<DamageHistoryScreen> {
           ),
         ),
         content: Text(
-          'Laporan "${report.result.category.label}" pada ${formatIndonesianDateTime(report.createdAt)} akan dihapus permanen dari penyimpanan lokal perangkat.',
+          isSynced
+              ? 'Laporan "${report.result.category.label}" pada ${formatIndonesianDateTime(report.createdAt)} sudah terkirim ke server. Menghapus di sini hanya menghapus salinan di perangkat; data di server tetap tersimpan.'
+              : 'Laporan "${report.result.category.label}" pada ${formatIndonesianDateTime(report.createdAt)} akan dihapus permanen dari penyimpanan lokal perangkat.',
           style: GoogleFonts.plusJakartaSans(
             fontSize: 13.5,
             color: AppColors.textSlate,
@@ -237,6 +290,12 @@ class _DamageHistoryScreenState extends State<DamageHistoryScreen> {
 
   Future<void> _openDetail(DamageScanReport report) async {
     HapticFeedback.selectionClick();
+    // Laporan server tanpa foto lokal dibuka sebagai pratinjau read-only;
+    // layar hasil penuh membutuhkan berkas gambar di perangkat.
+    if (report.isRemoteOnly) {
+      await _showRemoteDetailSheet(report);
+      return;
+    }
     await Navigator.of(context).push(
       SigapRoutes.slideRight(
         DamageResultScreen(
@@ -251,6 +310,86 @@ class _DamageHistoryScreenState extends State<DamageHistoryScreen> {
     if (mounted) {
       await _loadReports();
     }
+  }
+
+  /// Pratinjau ringkas laporan yang hanya tersimpan di server.
+  Future<void> _showRemoteDetailSheet(DamageScanReport report) async {
+    await showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: Colors.white,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(22)),
+      ),
+      builder: (ctx) {
+        final remoteUrl = report.imageUrl;
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(20, 16, 20, 24),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Laporan Tersinkronisasi',
+                  style: GoogleFonts.plusJakartaSans(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w800,
+                    color: AppColors.primaryDarkest,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  formatIndonesianDateTime(report.createdAt),
+                  style: GoogleFonts.plusJakartaSans(
+                    fontSize: 12,
+                    color: AppColors.textSlate,
+                  ),
+                ),
+                const SizedBox(height: 14),
+                if (remoteUrl != null && remoteUrl.isNotEmpty)
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(14),
+                    child: SizedBox(
+                      height: 180,
+                      width: double.infinity,
+                      child: Image.network(
+                        remoteUrl,
+                        fit: BoxFit.cover,
+                        errorBuilder: (_, _, _) => _buildThumbPlaceholder(),
+                      ),
+                    ),
+                  ),
+                const SizedBox(height: 14),
+                DamageCategoryBadge(category: report.result.category),
+                const SizedBox(height: 10),
+                Text(
+                  report.result.summary.isEmpty
+                      ? 'Ringkasan analisis tersimpan di server.'
+                      : report.result.summary,
+                  style: GoogleFonts.plusJakartaSans(
+                    fontSize: 13,
+                    color: AppColors.textSlate,
+                    height: 1.45,
+                  ),
+                ),
+                if (report.result.confidencePercentLabel != null) ...[
+                  const SizedBox(height: 10),
+                  Text(
+                    'Skor keyakinan: ${report.result.confidencePercentLabel}',
+                    style: GoogleFonts.plusJakartaSans(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w700,
+                      color: AppColors.primaryDarkest,
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ),
+        );
+      },
+    );
   }
 
   Future<void> _startNewScan() async {
@@ -380,6 +519,12 @@ class _DamageHistoryScreenState extends State<DamageHistoryScreen> {
                               const SizedBox(height: 14),
                             ],
 
+                            // Banner kegagalan muat riwayat server (non-blocking)
+                            if (_remoteError != null) ...[
+                              _buildRemoteErrorBanner(),
+                              const SizedBox(height: 14),
+                            ],
+
                             ..._reports.map(_buildReportCard),
                           ],
                         ),
@@ -403,9 +548,84 @@ class _DamageHistoryScreenState extends State<DamageHistoryScreen> {
     );
   }
 
+  /// Banner informasi saat riwayat server gagal dimuat.
+  ///
+  /// Bersifat non-blocking: laporan lokal tetap tampil di bawahnya, sehingga
+  /// warga tetap dapat membuka hasil pemindaian meski jaringan bermasalah.
+  Widget _buildRemoteErrorBanner() {
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: const Color(0xFFFEF3C7),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: const Color(0xFFFDE68A)),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Icon(
+            Icons.cloud_off_rounded,
+            color: Color(0xFF92400E),
+            size: 18,
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              _remoteError!,
+              style: GoogleFonts.plusJakartaSans(
+                fontSize: 11.5,
+                fontWeight: FontWeight.w600,
+                color: const Color(0xFF92400E),
+                height: 1.35,
+              ),
+            ),
+          ),
+          const SizedBox(width: 4),
+          IconButton(
+            tooltip: 'Coba muat riwayat server lagi',
+            onPressed: _isLoadingRemote ? null : _loadRemoteReports,
+            icon: const Icon(
+              Icons.refresh_rounded,
+              size: 18,
+              color: Color(0xFF92400E),
+            ),
+            constraints: const BoxConstraints(minWidth: 40, minHeight: 40),
+            padding: EdgeInsets.zero,
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Thumbnail laporan: berkas lokal bila ada, jika tidak foto server.
+  ///
+  /// Laporan yang hanya ada di server (perangkat lain/reinstall) tetap punya
+  /// pratinjau tanpa perlu mengunduh seluruh riwayat lebih dulu.
+  Widget _buildThumbnail(DamageScanReport report) {
+    final path = report.imagePath;
+    if (path.isNotEmpty && File(path).existsSync()) {
+      return Image.file(
+        File(path),
+        fit: BoxFit.cover,
+        errorBuilder: (context, error, stackTrace) => _buildThumbPlaceholder(),
+      );
+    }
+
+    final remoteUrl = report.imageUrl;
+    if (remoteUrl != null && remoteUrl.isNotEmpty) {
+      return Image.network(
+        remoteUrl,
+        fit: BoxFit.cover,
+        loadingBuilder: (context, child, progress) =>
+            progress == null ? child : _buildThumbPlaceholder(),
+        errorBuilder: (context, error, stackTrace) => _buildThumbPlaceholder(),
+      );
+    }
+
+    return _buildThumbPlaceholder();
+  }
+
   Widget _buildReportCard(DamageScanReport report) {
-    final file = File(report.imagePath);
-    final fileExists = report.imagePath.isNotEmpty && file.existsSync();
     final category = report.result.category;
 
     return Padding(
@@ -431,14 +651,7 @@ class _DamageHistoryScreenState extends State<DamageHistoryScreen> {
                   child: SizedBox(
                     width: 82,
                     height: 82,
-                    child: fileExists
-                        ? Image.file(
-                            file,
-                            fit: BoxFit.cover,
-                            errorBuilder: (context, error, stackTrace) =>
-                                _buildThumbPlaceholder(),
-                          )
-                        : _buildThumbPlaceholder(),
+                    child: _buildThumbnail(report),
                   ),
                 ),
                 const SizedBox(width: 12),

@@ -25,6 +25,8 @@ class ApiConfig {
   static const String emergencyContacts = '/api/emergency-contacts/';
   static const String news = '/api/news/';
   static const String dashboard = '/api/dashboard/';
+  static const String riskZones = '/api/map/risk-zones/';
+  static const String tsunamiShelters = '/api/shelters/tsunami/';
 
   // Family endpoints
   static const String familyGroups = '/api/family/groups/';
